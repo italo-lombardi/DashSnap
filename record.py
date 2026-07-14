@@ -46,17 +46,24 @@ if (
         except json.JSONDecodeError as e:
             raise SystemExit(f"DASHSNAP_AUTH_HEADERS is not valid JSON: {e}") from e
 
-# Backward-compat: old flat {base_url, token} or {base_url, auth} → single target "default"
-if "base_url" in CFG and "targets" not in CFG:  # pragma: no cover
-    if "token" in CFG and "auth" not in CFG:
-        CFG["auth"] = {"strategy": "ha_token", "token": CFG["token"]}
-    CFG["targets"] = [
-        {
-            "name": "default",
-            "base_url": CFG["base_url"],
-            "auth": CFG.get("auth", {"strategy": "ha_token"}),
-        }
-    ]
+# Backward-compat + multi-target shim (pragma: no cover — runs at import from config file)
+if "targets" not in CFG:  # pragma: no cover
+    targets_json = CFG.get("targets_json", "").strip()
+    if targets_json:
+        try:
+            CFG["targets"] = json.loads(targets_json)
+        except json.JSONDecodeError as e:
+            raise SystemExit(f"targets_json is not valid JSON: {e}") from e
+    elif "base_url" in CFG:
+        if "token" in CFG and "auth" not in CFG:
+            CFG["auth"] = {"strategy": "ha_token", "token": CFG["token"]}
+        CFG["targets"] = [
+            {
+                "name": "default",
+                "base_url": CFG["base_url"],
+                "auth": CFG.get("auth", {"strategy": "ha_token"}),
+            }
+        ]
 
 TARGETS = {t["name"]: t for t in CFG.get("targets", [])}
 DEFAULT_TARGET = next(iter(TARGETS)) if TARGETS else None
