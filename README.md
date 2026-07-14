@@ -7,7 +7,9 @@
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/italolombardi)
 [![PayPal](https://img.shields.io/badge/PayPal-00457C?style=flat&logo=paypal&logoColor=white)](https://paypal.me/ItaloLombardi)
 
-Record or screenshot any web page via headless Chromium — Home Assistant dashboards, Grafana, public pages, and more.
+[![Add Repository to HA](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fitalo-lombardi%2FDashSnap)
+
+Record or screenshot any web page via headless Chromium — Home Assistant dashboards, Grafana, public pages, and more. Available as a **Home Assistant App** (HAOS/Supervised) or as a standalone **Docker container**.
 
 ---
 
