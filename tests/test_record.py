@@ -409,7 +409,10 @@ class TestHaTarget:
 
 
 # ---------------------------------------------------------------------------
-# Backward-compat config shim (pure logic — no I/O)
+# Backward-compat config shim (logic proof — not record.py integration tests)
+# NOTE: These tests verify the shim algorithm in isolation. They re-implement
+# the logic inline by design — a reload-based approach would be needed to catch
+# regressions in record.py's module-level shim code directly.
 # ---------------------------------------------------------------------------
 
 
@@ -443,29 +446,27 @@ class TestConfigShim:
 
 
 def _mock_session(status=200, json_data=None, content_type="application/json", exception=None):
-    """Build a mock aiohttp.ClientSession that returns a controlled response."""
+    """Build a mock aiohttp.ClientSession with distinct get/head context managers."""
     from unittest.mock import AsyncMock, MagicMock
 
-    resp = MagicMock()
-    resp.status = status
-    resp.content_type = content_type
-    resp.json = AsyncMock(return_value=json_data or {})
-
-    if exception:
+    def _cm(exc=None):
+        resp = MagicMock()
+        resp.status = status
+        resp.content_type = content_type
+        resp.json = AsyncMock(return_value=json_data or {})
         cm = MagicMock()
-        cm.__aenter__ = AsyncMock(side_effect=exception)
+        if exc:
+            cm.__aenter__ = AsyncMock(side_effect=exc)
+        else:
+            cm.__aenter__ = AsyncMock(return_value=resp)
         cm.__aexit__ = AsyncMock(return_value=False)
-    else:
-        cm = MagicMock()
-        cm.__aenter__ = AsyncMock(return_value=resp)
-        cm.__aexit__ = AsyncMock(return_value=False)
+        return cm
 
     session = MagicMock()
-    session.get = MagicMock(return_value=cm)
-    session.head = MagicMock(return_value=cm)
+    session.get = MagicMock(return_value=_cm(exception))
+    session.head = MagicMock(return_value=_cm(exception))
     session.__aenter__ = AsyncMock(return_value=session)
     session.__aexit__ = AsyncMock(return_value=False)
-
     return session
 
 
@@ -479,6 +480,8 @@ class TestCheckTargetHealth:
         assert result["ok"] is True
         assert result["strategy"] == "ha_token"
         assert result["ha"] == "API running."
+        session.get.assert_called_once()
+        session.head.assert_not_called()
 
     async def test_ha_token_bad_token(self):
         import record
@@ -506,6 +509,8 @@ class TestCheckTargetHealth:
             result = await record._check_target_health(NONE_TARGET)
         assert result["ok"] is True
         assert result["http_status"] == 200
+        session.head.assert_called_once()
+        session.get.assert_not_called()
 
     async def test_none_strategy_unhealthy(self):
         import record
