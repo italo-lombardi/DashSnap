@@ -1,5 +1,5 @@
 name: DashSnap
-version: "0.0.1"
+version: "0.0.2"
 slug: dashsnap
 description: >
   Record or screenshot any web page via headless Chromium.

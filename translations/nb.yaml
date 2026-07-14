@@ -1,0 +1,22 @@
+configuration:
+  base_url:
+    name: HA Base URL
+    description: >-
+      URL til din Home Assistant-instans, slik den er tilgjengelig innenfra DashSnap-containeren.
+      Eksempler: http://homeassistant.local:8123, http://192.168.1.10:8123,
+      eller din Nabu Casa URL https://xxxx.ui.nabu.casa.
+      La feltet stå tomt hvis du bruker targets_json for oppsett med flere mål.
+  token:
+    name: Langtidsaksesstoken
+    description: >-
+      Et Home Assistant langtidsaksesstoken.
+      Opprett ett i HA → Profil (nede til venstre) → Langtidsaksesstoken → Opprett token.
+      La feltet stå tomt hvis du bruker targets_json.
+  targets_json:
+    name: Konfigurasjon for flere mål (JSON)
+    description: >-
+      Valgfritt. Definer flere mål (HA + Grafana + offentlige sider) som en JSON-matrise.
+      Hvis angitt, ignoreres base_url og token ovenfor.
+      Eksempel: [{"name":"ha","base_url":"http://192.168.1.10:8123","auth":{"strategy":"ha_token","token":"eyJ..."}},
+      {"name":"grafana","base_url":"https://grafana.example.com","auth":{"strategy":"http_header","headers":{"Authorization":"Bearer glsa_xxx"}}}]
+      Støttede strategier: ha_token, http_header, none.

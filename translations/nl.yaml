@@ -1,0 +1,22 @@
+configuration:
+  base_url:
+    name: HA Base URL
+    description: >-
+      URL van uw Home Assistant-instantie, bereikbaar vanuit de DashSnap-container.
+      Voorbeelden: http://homeassistant.local:8123, http://192.168.1.10:8123,
+      of uw Nabu Casa URL https://xxxx.ui.nabu.casa.
+      Laat leeg als u targets_json gebruikt voor een configuratie met meerdere doelen.
+  token:
+    name: Langlevend toegangstoken
+    description: >-
+      Een langlevend Home Assistant-toegangstoken.
+      Maak er een aan via HA → Profiel (linksonder) → Langlevendige toegangstokens → Token aanmaken.
+      Laat leeg als u targets_json gebruikt.
+  targets_json:
+    name: Configuratie voor meerdere doelen (JSON)
+    description: >-
+      Optioneel. Definieer meerdere doelen (HA + Grafana + openbare pagina's) als een JSON-array.
+      Als dit is ingesteld, worden base_url en token hierboven genegeerd.
+      Voorbeeld: [{"name":"ha","base_url":"http://192.168.1.10:8123","auth":{"strategy":"ha_token","token":"eyJ..."}},
+      {"name":"grafana","base_url":"https://grafana.example.com","auth":{"strategy":"http_header","headers":{"Authorization":"Bearer glsa_xxx"}}}]
+      Ondersteunde strategieën: ha_token, http_header, none.

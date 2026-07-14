@@ -182,7 +182,10 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # tag is sanitised to [a-zA-Z0-9_] only by re.sub — this check is belt-and-suspenders
     tag = re.sub(r"[^a-zA-Z0-9]+", "_", url.split("://")[-1].strip("/")) or "page"
+    if not re.fullmatch(r"[a-zA-Z0-9_]+", tag):
+        raise RuntimeError(f"unexpected tag after sanitisation: {tag!r}")
     is_png = fmt == "png"
     tmp_dir = OUT_DIR / f".tmp_{tag}_{stamp}"
     if not is_png:

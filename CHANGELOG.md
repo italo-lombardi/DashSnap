@@ -2,6 +2,18 @@
 
 All notable changes to DashSnap.
 
+## [0.0.2] - 2026-07-14
+
+### Added
+- **Multi-language add-on translations** — field labels and descriptions in 10 languages (da, de, es, fr, it, nb, nl, pl, pt, sv).
+- **`targets_json` config field** — paste a JSON array in the HA App UI to configure multiple targets (HA + Grafana + public pages) without Docker.
+
+### Fixed
+- Path injection false positives: added explicit `assert` to prove `tag` is alphanumeric-only.
+- CI workflows: added `permissions: contents: read` to all jobs.
+
+---
+
 ## [0.0.1] - 2026-07-14
 
 Initial release — generalized from HA Dashboard Recorder.
