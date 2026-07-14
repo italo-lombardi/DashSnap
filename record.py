@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import pathlib
@@ -15,7 +16,8 @@ from playwright.async_api import async_playwright
 
 _cfg_path = os.environ.get("CONFIG_PATH", "/data/options.json")
 try:
-    CFG = json.load(open(_cfg_path))
+    with open(_cfg_path) as _f:
+        CFG = json.load(_f)
 except FileNotFoundError:
     CFG = {}
 
@@ -33,7 +35,10 @@ if os.environ.get("DASHSNAP_AUTH_STRATEGY") or os.environ.get("DASHSNAP_AUTH_TOK
         else:
             auth["token"] = os.environ["DASHSNAP_AUTH_TOKEN"]
     if os.environ.get("DASHSNAP_AUTH_HEADERS"):
-        auth["headers"] = json.loads(os.environ["DASHSNAP_AUTH_HEADERS"])
+        try:
+            auth["headers"] = json.loads(os.environ["DASHSNAP_AUTH_HEADERS"])
+        except json.JSONDecodeError as e:
+            raise SystemExit(f"DASHSNAP_AUTH_HEADERS is not valid JSON: {e}") from e
 
 # Backward-compat: old flat {base_url, token} or {base_url, auth} → single target "default"
 if "base_url" in CFG and "targets" not in CFG:
@@ -76,7 +81,7 @@ async def _auth_ha_token(context, page, auth_cfg, base_url):
     })
     await context.add_init_script(
         """(() => {
-          const blob = %s;
+          const blob = __TOKEN_BLOB__;
           try { localStorage.setItem('hassTokens', JSON.stringify(blob)); } catch (e) {}
           try {
             const open = indexedDB.open('home-assistant', 1);
@@ -92,8 +97,7 @@ async def _auth_ha_token(context, page, auth_cfg, base_url):
               } catch (e) {}
             };
           } catch (e) {}
-        })();"""
-        % token_blob
+        })();""".replace("__TOKEN_BLOB__", token_blob)
     )
     # Land on origin first, await IndexedDB commit before target nav (eliminates race)
     await page.goto(f"{base_url}/", wait_until="domcontentloaded")
@@ -254,7 +258,7 @@ async def list_dashboards():
     token = target.get("auth", {}).get("token", "")
     ws_url = base_url.replace("http", "ws", 1) + "/api/websocket"
     async with aiohttp.ClientSession() as s:
-        async with s.ws_connect(ws_url, timeout=10) as ws:
+        async with s.ws_connect(ws_url, timeout=aiohttp.ClientTimeout(total=10)) as ws:
             await ws.receive_json()
             await ws.send_json({"type": "auth", "access_token": token})
             auth = await ws.receive_json()
@@ -274,40 +278,32 @@ async def list_dashboards():
 # ---------------------------------------------------------------------------
 
 def _params(q):
-    fmt = q.get("format", "webm").lower()
-    if fmt not in ("webm", "png"):
-        fmt = "webm"
-    return {
-        "seconds": int(q.get("seconds", DEFAULTS["seconds"])),
-        "vw": int(q.get("viewport_width", DEFAULTS["viewport_width"])),
-        "vh": int(q.get("viewport_height", DEFAULTS["viewport_height"])),
-        "fmt": fmt,
-        "target_name": q.get("target") or None,
-    }
+    try:
+        fmt = q.get("format", "webm").lower()
+        if fmt not in ("webm", "png"):
+            fmt = "webm"
+        return {
+            "seconds": int(q.get("seconds", DEFAULTS["seconds"])),
+            "vw": int(q.get("viewport_width", DEFAULTS["viewport_width"])),
+            "vh": int(q.get("viewport_height", DEFAULTS["viewport_height"])),
+            "fmt": fmt,
+            "target_name": q.get("target") or None,
+        }
+    except (ValueError, TypeError) as e:
+        raise web.HTTPBadRequest(reason=f"invalid param: {e}") from e
 
-
-def _resolve_url(q):
-    """?url= absolute URL used as-is. ?path= prepended with target's base_url."""
-    if q.get("url"):
-        return q["url"]
-    path = q.get("path")
-    if path:
-        target_name = q.get("target") or DEFAULT_TARGET
-        target = TARGETS.get(target_name)
-        base = target["base_url"].rstrip("/") if target else ""
-        return base + ("" if path.startswith("/") else "/") + path
-    return None
 
 # ---------------------------------------------------------------------------
 # Request handlers
 # ---------------------------------------------------------------------------
 
 async def handle_record(request):
+    """POST/GET /record?url=<absolute-url>&target=<name> — record any URL."""
     q = request.query
-    url = _resolve_url(q)
+    url = q.get("url")
     if not url:
         return web.json_response(
-            {"ok": False, "error": "missing 'url' or 'path'"},
+            {"ok": False, "error": "missing 'url' — e.g. ?url=https://grafana.example.com/d/xyz"},
             status=400,
         )
     p = _params(q)
@@ -318,22 +314,48 @@ async def handle_record(request):
     return web.json_response({"ok": True, "file": out})
 
 
+async def handle_record_ha(request):
+    """POST/GET /record/ha?path=<ha-path>&target=<name> — record an HA page by path."""
+    q = request.query
+    path = q.get("path")
+    if not path:
+        return web.json_response(
+            {"ok": False, "error": "missing 'path' — e.g. ?path=/lovelace/0"},
+            status=400,
+        )
+    p = _params(q)
+    target_name = p["target_name"] or DEFAULT_TARGET
+    target = TARGETS.get(target_name)
+    if not target:
+        return web.json_response({"ok": False, "error": f"unknown target: {target_name!r}"}, status=400)
+    base = target["base_url"].rstrip("/")
+    url = base + ("" if path.startswith("/") else "/") + path
+    try:
+        out = await record(url, p["seconds"], p["vw"], p["vh"], p["fmt"], target_name)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+    return web.json_response({"ok": True, "file": out})
+
+
 async def handle_health(request):
     if not TARGETS:
         return web.json_response({"ok": False, "error": "no targets configured"}, status=503)
-    results = []
-    for target in TARGETS.values():
-        results.append(await _check_target_health(target))
+    results = await asyncio.gather(*[_check_target_health(t) for t in TARGETS.values()])
     ok = all(r["ok"] for r in results)
-    return web.json_response({"ok": ok, "targets": results},
-                             status=200 if ok else 502)
+    return web.json_response({"ok": ok, "targets": list(results)}, status=200 if ok else 502)
 
 
 async def handle_targets(request):
-    return web.json_response({"ok": True, "targets": list(TARGETS.keys())})
+    targets = [
+        {"name": t["name"], "strategy": t.get("auth", {}).get("strategy", "none")}
+        for t in TARGETS.values()
+    ]
+    return web.json_response({"ok": True, "targets": targets})
 
 
 async def handle_ha_dashboards(request):
+    if _ha_target() is None:
+        return web.json_response({"ok": False, "error": "no ha_token target configured"}, status=404)
     try:
         dashboards = await list_dashboards()
     except Exception as e:
@@ -346,11 +368,10 @@ async def handle_ha_dashboards(request):
 
 app = web.Application()
 app.router.add_route("*", "/record", handle_record)
+app.router.add_route("*", "/record/ha", handle_record_ha)
 app.router.add_get("/health", handle_health)
 app.router.add_get("/targets", handle_targets)
-
-if _ha_target() is not None:
-    app.router.add_get("/ha/dashboards", handle_ha_dashboards)
+app.router.add_get("/ha/dashboards", handle_ha_dashboards)
 
 if __name__ == "__main__":
     web.run_app(app, host="0.0.0.0", port=8099)
