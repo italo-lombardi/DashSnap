@@ -1,7 +1,10 @@
 name: DashSnap
 version: "0.0.1"
 slug: dashsnap
-description: Record or screenshot any web page via headless Chromium — Home Assistant dashboards, Grafana, and more
+description: >
+  Record or screenshot any web page via headless Chromium — Home Assistant dashboards, Grafana, and more.
+  When running as an HA add-on, configure a single target via base_url + token below.
+  For multi-target setups (e.g. HA + Grafana), run via Docker and use a full options.json with a targets list.
 arch:
   - aarch64
   - amd64

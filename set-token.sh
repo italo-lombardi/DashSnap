@@ -20,12 +20,12 @@ set_token() {
   DS_TOK="$tok" python3 -c "
 import json, os
 p = '$CFG'
-d = json.load(open(p))
+with open(p) as f: d = json.load(f)
 if 'auth' in d:
     d['auth']['token'] = os.environ['DS_TOK']
 else:
     d['token'] = os.environ['DS_TOK']
-json.dump(d, open(p, 'w'), indent=2)
+with open(p, 'w') as f: json.dump(d, f, indent=2)
 "
   echo "token set in $CFG"
 }
@@ -34,12 +34,12 @@ clear_token() {
   python3 -c "
 import json
 p = '$CFG'
-d = json.load(open(p))
+with open(p) as f: d = json.load(f)
 if 'auth' in d:
     d['auth']['token'] = ''
 else:
     d['token'] = ''
-json.dump(d, open(p, 'w'), indent=2)
+with open(p, 'w') as f: json.dump(d, f, indent=2)
 "
   echo "token cleared in $CFG"
 }
@@ -47,7 +47,7 @@ json.dump(d, open(p, 'w'), indent=2)
 show() {
   python3 -c "
 import json
-d = json.load(open('$CFG'))
+with open('$CFG') as f: d = json.load(f)
 t = d.get('auth', {}).get('token') or d.get('token', '')
 print('token: SET (' + str(len(t)) + ' chars)' if t else 'token: NOT set')
 "

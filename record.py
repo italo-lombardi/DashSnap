@@ -283,7 +283,7 @@ def _params(q):
         if fmt not in ("webm", "png"):
             fmt = "webm"
         return {
-            "seconds": int(q.get("seconds", DEFAULTS["seconds"])),
+            "seconds": min(int(q.get("seconds", DEFAULTS["seconds"])), 3600),
             "vw": int(q.get("viewport_width", DEFAULTS["viewport_width"])),
             "vh": int(q.get("viewport_height", DEFAULTS["viewport_height"])),
             "fmt": fmt,
@@ -304,6 +304,11 @@ async def handle_record(request):
     if not url:
         return web.json_response(
             {"ok": False, "error": "missing 'url' — e.g. ?url=https://grafana.example.com/d/xyz"},
+            status=400,
+        )
+    if not url.startswith(("http://", "https://")):
+        return web.json_response(
+            {"ok": False, "error": "url must start with http:// or https://"},
             status=400,
         )
     p = _params(q)
