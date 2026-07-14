@@ -189,7 +189,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
     _raw_tag = re.sub(r"[^a-zA-Z0-9]+", "_", url.split("://")[-1].strip("/")) or "page"
     if not re.fullmatch(r"[a-zA-Z0-9_]+", _raw_tag):
         raise RuntimeError(f"unexpected tag after sanitisation: {_raw_tag!r}")
-    tag: str = _raw_tag  # CodeQL: taint ends here — tag is guaranteed alphanumeric
+    tag = _raw_tag  # taint ends at the fullmatch check above
     is_png = fmt == "png"
     tmp_dir = OUT_DIR / (f".tmp_{tag}_{stamp}")
     if not is_png:
@@ -451,7 +451,6 @@ app.router.add_get("/ha/dashboards", handle_ha_dashboards)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    log = logging.getLogger("dashsnap")
     log.info("DashSnap starting on port 8099")
     log.info("Configured targets: %s", list(TARGETS.keys()) if TARGETS else "none")
     log.info("Default target: %s", DEFAULT_TARGET)
