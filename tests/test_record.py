@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
-from aioresponses import aioresponses
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -431,17 +430,39 @@ class TestConfigShim:
 # ---------------------------------------------------------------------------
 
 
+def _mock_session(status=200, json_data=None, content_type="application/json", exception=None):
+    """Build a mock aiohttp.ClientSession that returns a controlled response."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    resp = MagicMock()
+    resp.status = status
+    resp.content_type = content_type
+    resp.json = AsyncMock(return_value=json_data or {})
+
+    if exception:
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(side_effect=exception)
+        cm.__aexit__ = AsyncMock(return_value=False)
+    else:
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=resp)
+        cm.__aexit__ = AsyncMock(return_value=False)
+
+    session = MagicMock()
+    session.get = MagicMock(return_value=cm)
+    session.head = MagicMock(return_value=cm)
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=False)
+
+    return session
+
+
 class TestCheckTargetHealth:
     async def test_ha_token_healthy(self):
         import record
 
-        with aioresponses() as m:
-            m.get(
-                "http://homeassistant.local:8123/api/",
-                status=200,
-                payload={"message": "API running."},
-                content_type="application/json",
-            )
+        session = _mock_session(status=200, json_data={"message": "API running."})
+        with patch("aiohttp.ClientSession", return_value=session):
             result = await record._check_target_health(HA_TARGET)
         assert result["ok"] is True
         assert result["strategy"] == "ha_token"
@@ -450,8 +471,8 @@ class TestCheckTargetHealth:
     async def test_ha_token_bad_token(self):
         import record
 
-        with aioresponses() as m:
-            m.get("http://homeassistant.local:8123/api/", status=401)
+        session = _mock_session(status=401)
+        with patch("aiohttp.ClientSession", return_value=session):
             result = await record._check_target_health(HA_TARGET)
         assert result["ok"] is False
         assert result["hint"] == "bad token"
@@ -459,8 +480,8 @@ class TestCheckTargetHealth:
     async def test_ha_token_other_http_error(self):
         import record
 
-        with aioresponses() as m:
-            m.get("http://homeassistant.local:8123/api/", status=503)
+        session = _mock_session(status=503)
+        with patch("aiohttp.ClientSession", return_value=session):
             result = await record._check_target_health(HA_TARGET)
         assert result["ok"] is False
         assert "503" in result["hint"]
@@ -468,8 +489,8 @@ class TestCheckTargetHealth:
     async def test_none_strategy_healthy(self):
         import record
 
-        with aioresponses() as m:
-            m.head("https://example.com", status=200)
+        session = _mock_session(status=200)
+        with patch("aiohttp.ClientSession", return_value=session):
             result = await record._check_target_health(NONE_TARGET)
         assert result["ok"] is True
         assert result["http_status"] == 200
@@ -477,18 +498,18 @@ class TestCheckTargetHealth:
     async def test_none_strategy_unhealthy(self):
         import record
 
-        with aioresponses() as m:
-            m.head("https://example.com", status=503)
+        session = _mock_session(status=503)
+        with patch("aiohttp.ClientSession", return_value=session):
             result = await record._check_target_health(NONE_TARGET)
         assert result["ok"] is False
 
     async def test_connection_error_returns_ok_false(self):
-        from aiohttp import ClientConnectionError
+        import aiohttp
 
         import record
 
-        with aioresponses() as m:
-            m.head("https://example.com", exception=ClientConnectionError("refused"))
+        session = _mock_session(exception=aiohttp.ClientConnectionError("refused"))
+        with patch("aiohttp.ClientSession", return_value=session):
             result = await record._check_target_health(NONE_TARGET)
         assert result["ok"] is False
         assert "refused" in result["error"]
