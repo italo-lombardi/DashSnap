@@ -182,7 +182,9 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # tag is sanitised to [a-zA-Z0-9_] only — no path traversal possible
     tag = re.sub(r"[^a-zA-Z0-9]+", "_", url.split("://")[-1].strip("/")) or "page"
+    assert re.fullmatch(r"[a-zA-Z0-9_]+", tag), "tag must be alphanumeric"
     is_png = fmt == "png"
     tmp_dir = OUT_DIR / f".tmp_{tag}_{stamp}"
     if not is_png:
