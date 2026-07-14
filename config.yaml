@@ -4,6 +4,9 @@ slug: dashsnap
 description: >
   Record or screenshot any web page via headless Chromium.
 
+  PRIORITY RULE: if targets_json is set, base_url and token are ignored entirely.
+  Only one mode is active at a time — you cannot mix them.
+
   SINGLE TARGET (HA only): set base_url to your HA URL (e.g. http://homeassistant.local:8123)
   and token to a long-lived access token (HA Profile → Long-lived access tokens).
   Leave targets_json empty.
