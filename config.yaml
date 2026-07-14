@@ -1,0 +1,23 @@
+name: DashSnap
+version: "0.0.1"
+slug: dashsnap
+description: >
+  Record or screenshot any web page via headless Chromium — Home Assistant dashboards, Grafana, and more.
+  Single target: set base_url + token. Multi-target: paste a JSON array into targets_json.
+arch:
+  - aarch64
+  - amd64
+init: false
+boot: manual
+map:
+  - media:rw
+ports:
+  8099/tcp: 8099
+options:
+  base_url: "http://homeassistant.local:8123"
+  token: ""
+  targets_json: ""
+schema:
+  base_url: str?
+  token: password?
+  targets_json: str?
