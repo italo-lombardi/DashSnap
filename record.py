@@ -386,6 +386,11 @@ async def handle_record_ha(request):
         )
     base = target["base_url"].rstrip("/")
     url = base + ("" if path.startswith("/") else "/") + path
+    if not url.startswith(("http://", "https://")):
+        return web.json_response(
+            {"ok": False, "error": "assembled URL must start with http:// or https://"},
+            status=400,
+        )
     try:
         out = await record(url, p["seconds"], p["vw"], p["vh"], p["fmt"], target_name)
     except Exception as e:

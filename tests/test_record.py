@@ -227,6 +227,18 @@ class TestHandleRecordHa:
             assert resp.status == 200
             assert mock_record.call_args[0][0] == "http://homeassistant.local:8123/lovelace/0"
 
+    async def test_bad_base_url_in_target_returns_400(self):
+        import record
+
+        bad_target = {**HA_TARGET, "base_url": "ftp://bad.host"}
+        with (
+            patch.object(record, "TARGETS", {"ha": bad_target}),
+            patch.object(record, "DEFAULT_TARGET", "ha"),
+        ):
+            req = _req(path="/record/ha", params={"path": "/lovelace/0", "target": "ha"})
+            resp = await record.handle_record_ha(req)
+            assert resp.status == 400
+
     async def test_record_exception_returns_500(self):
         import record
 
