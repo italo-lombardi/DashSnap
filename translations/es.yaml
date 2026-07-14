@@ -1,0 +1,22 @@
+configuration:
+  base_url:
+    name: HA Base URL
+    description: >-
+      URL de tu instancia de Home Assistant, accesible desde dentro del contenedor DashSnap.
+      Ejemplos: http://homeassistant.local:8123, http://192.168.1.10:8123,
+      o tu URL de Nabu Casa https://xxxx.ui.nabu.casa.
+      Déjalo vacío si usas targets_json para la configuración de múltiples destinos.
+  token:
+    name: Token de acceso de larga duración
+    description: >-
+      Un token de acceso de larga duración de Home Assistant.
+      Créalo en HA → Perfil (abajo a la izquierda) → Tokens de acceso de larga duración → Crear token.
+      Déjalo vacío si usas targets_json.
+  targets_json:
+    name: Configuración multidestino (JSON)
+    description: >-
+      Opcional. Define múltiples destinos (HA + Grafana + páginas públicas) como un array JSON.
+      Si se especifica, base_url y token anteriores serán ignorados.
+      Ejemplo: [{"name":"ha","base_url":"http://192.168.1.10:8123","auth":{"strategy":"ha_token","token":"eyJ..."}},
+      {"name":"grafana","base_url":"https://grafana.example.com","auth":{"strategy":"http_header","headers":{"Authorization":"Bearer glsa_xxx"}}}]
+      Estrategias admitidas: ha_token, http_header, none.
