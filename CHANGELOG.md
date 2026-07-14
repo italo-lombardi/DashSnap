@@ -5,7 +5,7 @@ All notable changes to DashSnap.
 ## [0.0.2] - 2026-07-14
 
 ### Added
-- **Multi-language add-on translations** — field labels and descriptions in 11 languages (da, de, en, es, fr, it, nb, nl, pl, pt, sv).
+- **Multi-language add-on translations** — field labels and descriptions in 10 languages (da, de, es, fr, it, nb, nl, pl, pt, sv).
 - **`targets_json` config field** — paste a JSON array in the HA App UI to configure multiple targets (HA + Grafana + public pages) without Docker.
 
 ### Fixed
