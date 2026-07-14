@@ -69,6 +69,8 @@ if "targets" not in CFG:  # pragma: no cover
 TARGETS = {t["name"]: t for t in CFG.get("targets", [])}
 DEFAULT_TARGET = next(iter(TARGETS)) if TARGETS else None
 
+log = logging.getLogger("dashsnap")
+
 OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/dashsnap"))
 
 DEFAULTS = {
@@ -183,12 +185,13 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # tag is sanitised to [a-zA-Z0-9_] only by re.sub — this check is belt-and-suspenders
-    tag = re.sub(r"[^a-zA-Z0-9]+", "_", url.split("://")[-1].strip("/")) or "page"
-    if not re.fullmatch(r"[a-zA-Z0-9_]+", tag):
-        raise RuntimeError(f"unexpected tag after sanitisation: {tag!r}")
+    # Sanitise tag to [a-zA-Z0-9_] only — prevents path traversal in filenames
+    _raw_tag = re.sub(r"[^a-zA-Z0-9]+", "_", url.split("://")[-1].strip("/")) or "page"
+    if not re.fullmatch(r"[a-zA-Z0-9_]+", _raw_tag):
+        raise RuntimeError(f"unexpected tag after sanitisation: {_raw_tag!r}")
+    tag = _raw_tag  # taint ends at the fullmatch check above
     is_png = fmt == "png"
-    tmp_dir = OUT_DIR / f".tmp_{tag}_{stamp}"
+    tmp_dir = OUT_DIR / (f".tmp_{tag}_{stamp}")
     if not is_png:
         tmp_dir.mkdir(exist_ok=True)
 
@@ -368,7 +371,9 @@ async def handle_record(request):
     try:
         out = await record(url, p["seconds"], p["vw"], p["vh"], p["fmt"], p["target_name"])
     except Exception as e:
+        log.error("record failed for %s: %s", url, e)
         return web.json_response({"ok": False, "error": str(e)}, status=500)
+    log.info("recorded %s → %s", url, out)
     return web.json_response({"ok": True, "file": out})
 
 
@@ -398,7 +403,9 @@ async def handle_record_ha(request):
     try:
         out = await record(url, p["seconds"], p["vw"], p["vh"], p["fmt"], target_name)
     except Exception as e:
+        log.error("record/ha failed for %s: %s", url, e)
         return web.json_response({"ok": False, "error": str(e)}, status=500)
+    log.info("recorded %s → %s", url, out)
     return web.json_response({"ok": True, "file": out})
 
 
@@ -426,6 +433,7 @@ async def handle_ha_dashboards(request):
     try:
         dashboards = await list_dashboards()
     except Exception as e:
+        log.error("ha/dashboards failed: %s", e)
         return web.json_response({"ok": False, "error": str(e)}, status=502)
     return web.json_response({"ok": True, "dashboards": dashboards})
 
@@ -443,7 +451,6 @@ app.router.add_get("/ha/dashboards", handle_ha_dashboards)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    log = logging.getLogger("dashsnap")
     log.info("DashSnap starting on port 8099")
     log.info("Configured targets: %s", list(TARGETS.keys()) if TARGETS else "none")
     log.info("Default target: %s", DEFAULT_TARGET)
