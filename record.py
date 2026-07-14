@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import pathlib
 import re
@@ -441,4 +442,9 @@ app.router.add_get("/targets", handle_targets)
 app.router.add_get("/ha/dashboards", handle_ha_dashboards)
 
 if __name__ == "__main__":
-    web.run_app(app, host="0.0.0.0", port=8099)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    log = logging.getLogger("dashsnap")
+    log.info("DashSnap starting on port 8099")
+    log.info("Configured targets: %s", list(TARGETS.keys()) if TARGETS else "none")
+    log.info("Default target: %s", DEFAULT_TARGET)
+    web.run_app(app, host="0.0.0.0", port=8099, access_log=logging.getLogger("aiohttp.access"))
