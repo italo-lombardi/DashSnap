@@ -1,0 +1,21 @@
+name: DashSnap
+version: "0.0.1"
+slug: dashsnap
+description: Record or screenshot any web page via headless Chromium — Home Assistant dashboards, Grafana, and more
+arch:
+  - aarch64
+  - amd64
+init: false
+boot: manual
+map:
+  - media:rw
+ports:
+  8099/tcp: 8099
+options:
+  base_url: "http://homeassistant.local:8123"
+  token: ""
+  auth_strategy: "ha_token"
+schema:
+  base_url: str
+  token: password
+  auth_strategy: str?

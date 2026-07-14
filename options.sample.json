@@ -1,0 +1,9 @@
+{
+  "base_url": "https://grafana.example.com",
+  "auth": {
+    "strategy": "http_header",
+    "headers": {
+      "Authorization": "Bearer glsa_xxxx"
+    }
+  }
+}
