@@ -1,11 +1,16 @@
 # Run DashSnap as a plain Docker container (no HA supervisor).
-# For local dev/testing or a Home Assistant Container (non-supervised) setup.
 #
 #   1. cp options.sample.json options.json  &&  edit it
 #   2. docker compose up --build
 #   3. curl http://localhost:8099/health
 #
-# Recordings appear in ./recordings (mapped to /media/dashsnap).
+# Output folder:
+#   By default recordings go to ./recordings/ next to this file.
+#   Change the left side of the volume mount to any folder you want:
+#
+#     - ~/Downloads:/media/dashsnap        # save to Downloads
+#     - /mnt/nas/dashsnap:/media/dashsnap  # save to NAS
+#
 services:
   dashsnap:
     build: .
@@ -14,7 +19,7 @@ services:
       - "8099:8099"
     volumes:
       - ./options.json:/data/options.json:ro
-      - ./recordings:/media/dashsnap
+      - ./recordings:/media/dashsnap   # ← change left side to redirect output
     # host.docker.internal lets DashSnap reach a service running on the Docker host.
     extra_hosts:
       - "host.docker.internal:host-gateway"

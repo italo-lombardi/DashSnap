@@ -238,11 +238,42 @@ data:
 
 ---
 
-## Recordings output
+## Where recordings are saved
 
-Files are saved to `/media/dashsnap/` inside the container (mapped to `./recordings/` with Docker Compose, or the HA `/media` folder with the App).
+| Setup | Default location | How to change |
+|---|---|---|
+| HA App | `/media/dashsnap/` (HA Media browser) | Not configurable from the App UI |
+| Docker Compose | `./recordings/` next to `docker-compose.yml` | Edit the volume mount (see below) |
+| Docker run | `/media/dashsnap/` inside the container | Mount a host path with `-v` |
 
-File naming: `<sanitised-url>_<timestamp>.webm` or `.png`
+### Docker Compose — point recordings anywhere
+
+Edit the left side of the volume mount in `docker-compose.yml`:
+
+```yaml
+volumes:
+  - ~/Downloads:/media/dashsnap          # save to Downloads folder
+  - /mnt/nas/recordings:/media/dashsnap  # save to NAS
+  - ./recordings:/media/dashsnap         # default — next to compose file
+```
+
+### Docker run — save to Downloads
+
+```bash
+docker run -d \
+  -p 8099:8099 \
+  -v ~/Downloads:/media/dashsnap \
+  -e DASHSNAP_BASE_URL=http://homeassistant.local:8123 \
+  -e DASHSNAP_AUTH_STRATEGY=ha_token \
+  -e DASHSNAP_AUTH_TOKEN=eyJ... \
+  dashsnap
+```
+
+The `/record` and `/record/ha` responses always include the full file path inside the container, so you always know exactly what was saved:
+
+```json
+{"ok": true, "file": "/media/dashsnap/lovelace_0_20260714_193914.webm"}
+```
 
 ---
 
