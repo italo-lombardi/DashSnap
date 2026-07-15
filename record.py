@@ -608,7 +608,6 @@ function render() {
       ${t.name !== 'public' ? `<button class="trow-btn" onclick="openForm(${i})">Edit</button>
       <button class="trow-btn del" onclick="deleteTarget(${i})">Delete</button>` : ''}`;
     list.appendChild(row);
-    list.appendChild(row);
   });
 }
 

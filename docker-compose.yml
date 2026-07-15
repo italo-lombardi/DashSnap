@@ -15,14 +15,16 @@
 #   Create a .env file (gitignored):
 #
 #     RECORDINGS_PATH=/absolute/path/to/ha/config/media/DashSnap
+#     DASHSNAP_UID=1000   # match the HA user so HA can delete files
 #
 #   Then docker compose up -d — recordings write directly into HA's media folder.
-#   Default (no .env): RECORDINGS_PATH=./recordings
+#   Default (no .env): RECORDINGS_PATH=./recordings, DASHSNAP_UID=0
 #
 services:
   dashsnap:
     build: .
     container_name: dashsnap
+    user: "${DASHSNAP_UID:-0}"
     ports:
       - "8099:8099"
     volumes:
