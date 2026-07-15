@@ -53,7 +53,7 @@ _load_config()  # pragma: no cover
 
 log = logging.getLogger("dashsnap")
 
-OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/dashsnap"))
+OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/DashSnap"))
 
 DEFAULTS = {
     "seconds": 30,
@@ -166,11 +166,21 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
     is_ha_url = strategy == "ha_token" and url.startswith(base_url)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    safe_root = OUT_DIR.resolve()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     _path = urlparse(url).path.strip("/") or urlparse(url).netloc
     slug = re.sub(r"[^a-zA-Z0-9]+", "_", _path)[:40].strip("_") or "page"
     is_png = fmt == "png"
-    tmp_dir = OUT_DIR / f".tmp_{stamp}_{slug}"
+
+    def _safe(p: pathlib.Path) -> pathlib.Path:
+        resolved = p.resolve()
+        try:
+            resolved.relative_to(safe_root)
+        except ValueError as exc:
+            raise RuntimeError(f"path escapes OUT_DIR: {resolved}") from exc
+        return resolved
+
+    tmp_dir = _safe(OUT_DIR / f".tmp_{stamp}_{slug}")
     if not is_png:
         tmp_dir.mkdir(exist_ok=True)
 
@@ -202,7 +212,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
                     )
 
             if is_png:
-                final = OUT_DIR / f"{stamp}_{slug}.png"
+                final = _safe(OUT_DIR / f"{stamp}_{slug}.png")
                 await page.screenshot(path=str(final))
                 return str(final)
 
@@ -215,7 +225,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
     if not webms:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise RuntimeError("no video produced")
-    final = OUT_DIR / f"{stamp}_{slug}.webm"
+    final = _safe(OUT_DIR / f"{stamp}_{slug}.webm")
     webms[0].replace(final)
     shutil.rmtree(tmp_dir, ignore_errors=True)
     return str(final)
