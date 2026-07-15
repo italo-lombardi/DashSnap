@@ -630,6 +630,7 @@ class TestHandleConfigGet:
         assert data["ok"] is True
         assert data["base_url"] == ""
 
+    @pytest.mark.asyncio
     async def test_invalid_json_file_returns_empty(self, tmp_path):
         import json
 

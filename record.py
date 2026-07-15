@@ -782,7 +782,7 @@ async def handle_config_save(request):
         log.error("config save failed: %s", e)
         return web.json_response({"ok": False, "error": str(e)}, status=502)
 
-    return web.json_response({"ok": True})
+    return web.json_response({"ok": True, "restarting": True})
 
 
 # ---------------------------------------------------------------------------
