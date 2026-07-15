@@ -711,12 +711,15 @@ async def handle_config_get(request):
             data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         data = {}
+    targets_json = data.get("targets_json", "")
+    if not targets_json and data.get("targets"):
+        targets_json = json.dumps(data["targets"], indent=2)
     return web.json_response(
         {
             "ok": True,
             "base_url": data.get("base_url", ""),
             "token": "***" if data.get("token") else "",
-            "targets_json": data.get("targets_json", ""),
+            "targets_json": targets_json,
             "has_supervisor": bool(os.environ.get("SUPERVISOR_TOKEN")),
         }
     )

@@ -645,6 +645,23 @@ class TestHandleConfigGet:
         assert data["ok"] is True
         assert data["base_url"] == ""
 
+    @pytest.mark.asyncio
+    async def test_targets_array_returned_as_json_when_targets_json_empty(self, tmp_path):
+        import json
+
+        import record
+
+        targets = [
+            {"name": "ha", "base_url": "http://ha.local:8123", "auth": {"strategy": "ha_token"}}
+        ]
+        cfg = tmp_path / "options.json"
+        cfg.write_text(json.dumps({"targets": targets}))
+        req = make_mocked_request("GET", "/config")
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            resp = await record.handle_config_get(req)
+        data = json.loads(resp.body)
+        assert data["targets_json"] == json.dumps(targets, indent=2)
+
 
 # ---------------------------------------------------------------------------
 # handle_config_save
