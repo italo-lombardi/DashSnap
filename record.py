@@ -152,7 +152,7 @@ AUTH_STRATEGIES = {
 # ---------------------------------------------------------------------------
 
 
-async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma: no cover
+async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  # pragma: no cover
     target = TARGETS.get(target_name or DEFAULT_TARGET)
     if target is None:
         raise ValueError(f"unknown target: {target_name!r}. Configured: {list(TARGETS)}")
@@ -212,6 +212,9 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
                         "Token invalid, or HA auth store shape changed."
                     )
 
+            if delay:
+                await page.wait_for_timeout(delay * 1000)
+
             if is_png:
                 final = _safe(OUT_DIR / f"{stamp}_{slug}.png")
                 await page.screenshot(path=str(final))
@@ -243,7 +246,7 @@ async def _check_target_health(target):
     auth_cfg = target.get("auth", {"strategy": "none"})
     strategy = auth_cfg.get("strategy", "none")
     if not base_url:
-        return {"name": name, "ok": True, "strategy": strategy, "base_url": base_url}
+        return {"name": name, "ok": True, "strategy": strategy, "probed": False}
     try:
         async with aiohttp.ClientSession() as s:
             if strategy == "ha_token":
@@ -255,29 +258,28 @@ async def _check_target_health(target):
                 ) as r:
                     body = await r.json() if r.content_type == "application/json" else {}
                     ok = r.status == 200
-                    result = {"name": name, "ok": ok, "strategy": strategy, "base_url": base_url}
+                    result = {"name": name, "ok": ok, "strategy": strategy, "probed": True}
                     if ok:
-                        result["ha"] = body.get("message")
+                        result["detail"] = body.get("message")
                     else:
-                        result["hint"] = "bad token" if r.status == 401 else f"HTTP {r.status}"
+                        result["error"] = "bad token" if r.status == 401 else f"HTTP {r.status}"
                     return result
             else:
                 async with s.head(base_url, timeout=aiohttp.ClientTimeout(total=10)) as r:
                     ok = 200 <= r.status < 400
-                    return {
-                        "name": name,
-                        "ok": ok,
-                        "strategy": strategy,
-                        "base_url": base_url,
-                        "http_status": r.status,
-                    }
-    except Exception as e:
+                    result = {"name": name, "ok": ok, "strategy": strategy, "probed": True}
+                    if ok:
+                        result["detail"] = f"HTTP {r.status}"
+                    else:
+                        result["error"] = f"HTTP {r.status}"
+                    return result
+    except Exception:
         return {
             "name": name,
             "ok": False,
             "strategy": strategy,
-            "base_url": base_url,
-            "error": str(e),
+            "probed": True,
+            "error": "unreachable",
         }
 
 
@@ -335,6 +337,7 @@ def _params(q):
             "vh": int(q.get("viewport_height", DEFAULTS["viewport_height"])),
             "fmt": fmt,
             "target_name": q.get("target") or None,
+            "delay": min(int(q.get("delay", 0)), 60),
         }
     except (ValueError, TypeError) as e:
         raise web.HTTPBadRequest(reason=f"invalid param: {e}") from e
@@ -361,12 +364,17 @@ async def handle_record(request):
         )
     p = _params(q)
     try:
-        out = await record(url, p["seconds"], p["vw"], p["vh"], p["fmt"], p["target_name"])
+        out = await record(
+            url, p["seconds"], p["vw"], p["vh"], p["fmt"], p["target_name"], p["delay"]
+        )
     except Exception as e:
         log.error("record failed for %s: %s", url, e)
         return web.json_response({"ok": False, "error": str(e)}, status=500)
     log.info("recorded %s → %s", url, out)
-    return web.json_response({"ok": True, "file": out})
+    target_used = p["target_name"] or DEFAULT_TARGET
+    return web.json_response(
+        {"ok": True, "file": out, "target": target_used, "url": url, "format": p["fmt"]}
+    )
 
 
 async def handle_record_ha(request):
@@ -402,20 +410,20 @@ async def handle_record_ha(request):
             status=400,
         )
     try:
-        out = await record(url, p["seconds"], p["vw"], p["vh"], p["fmt"], target_name)
+        out = await record(url, p["seconds"], p["vw"], p["vh"], p["fmt"], target_name, p["delay"])
     except Exception as e:
         log.error("record/ha failed for %s: %s", url, e)
         return web.json_response({"ok": False, "error": str(e)}, status=500)
     log.info("recorded %s → %s", url, out)
-    return web.json_response({"ok": True, "file": out})
+    return web.json_response(
+        {"ok": True, "file": out, "target": target_name, "url": url, "format": p["fmt"]}
+    )
 
 
 async def handle_health(request):
-    if not TARGETS:
-        return web.json_response({"ok": False, "error": "no targets configured"}, status=503)
     results = await asyncio.gather(*[_check_target_health(t) for t in TARGETS.values()])
     ok = all(r["ok"] for r in results)
-    return web.json_response({"ok": ok, "targets": list(results)}, status=200 if ok else 502)
+    return web.json_response({"ok": ok, "targets": list(results)})
 
 
 async def handle_targets(request):
@@ -700,14 +708,8 @@ async function save() {
   try {
     const r = await fetch('./config');
     const j = await r.json();
-    if (j.targets_json) {
-      try { targets = JSON.parse(j.targets_json); }
-      catch(e) {
-        const msg = document.getElementById('msg');
-        msg.className = 'msg err'; msg.textContent = 'Stored targets_json is invalid: ' + e.message;
-      }
-    } else if (j.base_url) {
-      targets = [{name:'default', base_url:j.base_url, auth:{strategy:'ha_token', token: j.token || ''}}];
+    if (j.targets && j.targets.length) {
+      targets = j.targets;
     }
     render();
     document.querySelector('.save-btn').textContent = j.has_supervisor ? 'Save & Restart' : 'Save';
@@ -740,20 +742,24 @@ async def handle_config_get(request):
     targets_json = data.get("targets_json", "")
     if not targets_json and data.get("targets"):
         targets_json = json.dumps(data["targets"], indent=2)
-    # Always include the built-in public target at the top
     try:
         tlist = json.loads(targets_json) if targets_json else []
     except json.JSONDecodeError:
         tlist = []
+    # Mask tokens in nested targets before returning
+    for t in tlist:
+        auth = t.get("auth", {})
+        if auth.get("token"):
+            auth["token"] = "***"
+        if auth.get("headers"):
+            auth["headers"] = dict.fromkeys(auth["headers"], "***")
+    # Always inject public at top (read-only built-in)
     tlist = [t for t in tlist if t.get("name") != "public"]
     tlist.insert(0, {"name": "public", "auth": {"strategy": "none"}})
-    targets_json = json.dumps(tlist, indent=2)
     return web.json_response(
         {
             "ok": True,
-            "base_url": data.get("base_url", ""),
-            "token": "***" if data.get("token") else "",
-            "targets_json": targets_json,
+            "targets": tlist,
             "has_supervisor": bool(os.environ.get("SUPERVISOR_TOKEN")),
         }
     )
@@ -772,7 +778,10 @@ async def handle_config_save(request):
         options.pop("token", None)  # *** = unchanged, omit from update
     if options.get("targets_json"):
         try:
-            json.loads(options["targets_json"])
+            tlist = json.loads(options["targets_json"])
+            # Strip built-in public target — it's server-side only, not stored
+            tlist = [t for t in tlist if t.get("name") != "public"]
+            options["targets_json"] = json.dumps(tlist)
         except json.JSONDecodeError as e:
             return web.json_response({"ok": False, "error": f"targets_json: {e}"}, status=400)
 
@@ -793,7 +802,7 @@ async def handle_config_save(request):
         except Exception as e:
             log.error("config save (local) failed: %s", e)
             return web.json_response({"ok": False, "error": str(e)}, status=500)
-        return web.json_response({"ok": True})
+        return web.json_response({"ok": True, "restarting": False})
 
     headers = {"Authorization": f"Bearer {supervisor_token}", "Content-Type": "application/json"}
     try:
