@@ -3,8 +3,10 @@ import json
 import logging
 import os
 import pathlib
+import re
 import shutil
 from datetime import datetime
+from urllib.parse import urlparse
 
 import aiohttp
 from aiohttp import web
@@ -165,8 +167,10 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    _path = urlparse(url).path.strip("/") or urlparse(url).netloc
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", _path)[:40].strip("_") or "page"
     is_png = fmt == "png"
-    tmp_dir = OUT_DIR / f".tmp_{stamp}"
+    tmp_dir = OUT_DIR / f".tmp_{stamp}_{slug}"
     if not is_png:
         tmp_dir.mkdir(exist_ok=True)
 
@@ -198,7 +202,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
                     )
 
             if is_png:
-                final = OUT_DIR / f"{stamp}.png"
+                final = OUT_DIR / f"{stamp}_{slug}.png"
                 await page.screenshot(path=str(final))
                 return str(final)
 
@@ -211,7 +215,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
     if not webms:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise RuntimeError("no video produced")
-    final = OUT_DIR / f"{stamp}.webm"
+    final = OUT_DIR / f"{stamp}_{slug}.webm"
     webms[0].replace(final)
     shutil.rmtree(tmp_dir, ignore_errors=True)
     return str(final)
