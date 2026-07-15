@@ -530,3 +530,182 @@ class TestCheckTargetHealth:
             result = await record._check_target_health(NONE_TARGET)
         assert result["ok"] is False
         assert "refused" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# handle_config_ui
+# ---------------------------------------------------------------------------
+
+
+class TestHandleConfigUi:
+    @pytest.mark.asyncio
+    async def test_returns_html(self):
+        import record
+
+        req = make_mocked_request("GET", "/")
+        resp = await record.handle_config_ui(req)
+        assert resp.content_type == "text/html"
+        assert b"DashSnap" in resp.body
+
+
+# ---------------------------------------------------------------------------
+# handle_config_get
+# ---------------------------------------------------------------------------
+
+
+class TestHandleConfigGet:
+    @pytest.mark.asyncio
+    async def test_returns_options_from_file(self, tmp_path):
+        import json
+
+        import record
+
+        cfg = tmp_path / "options.json"
+        cfg.write_text(
+            json.dumps({"base_url": "http://ha.local:8123", "token": "tok", "targets_json": ""})
+        )
+        req = make_mocked_request("GET", "/config")
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            resp = await record.handle_config_get(req)
+        data = json.loads(resp.body)
+        assert data["ok"] is True
+        assert data["base_url"] == "http://ha.local:8123"
+        assert data["token"] == "tok"
+
+    @pytest.mark.asyncio
+    async def test_missing_file_returns_empty(self, tmp_path):
+        import json
+
+        import record
+
+        req = make_mocked_request("GET", "/config")
+        with patch.dict("os.environ", {"CONFIG_PATH": str(tmp_path / "missing.json")}):
+            resp = await record.handle_config_get(req)
+        data = json.loads(resp.body)
+        assert data["ok"] is True
+        assert data["base_url"] == ""
+
+
+# ---------------------------------------------------------------------------
+# handle_config_save
+# ---------------------------------------------------------------------------
+
+
+class TestHandleConfigSave:
+    @pytest.mark.asyncio
+    async def test_no_supervisor_token_returns_503(self):
+        import json
+
+        import record
+
+        req = make_mocked_request("POST", "/config")
+        req.read = AsyncMock(return_value=b'{"base_url":"http://ha.local:8123","token":"t","targets_json":""}')
+        with patch.dict("os.environ", {}, clear=True):
+            resp = await record.handle_config_save(req)
+        assert resp.status == 503
+        data = json.loads(resp.body)
+        assert data["ok"] is False
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_returns_400(self):
+        import json
+
+        import record
+
+        req = make_mocked_request("POST", "/config")
+        req.read = AsyncMock(return_value=b"not-json")
+        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok"}):
+            resp = await record.handle_config_save(req)
+        assert resp.status == 400
+        data = json.loads(resp.body)
+        assert data["ok"] is False
+
+    @pytest.mark.asyncio
+    async def test_supervisor_error_returns_502(self):
+        import json
+
+        import record
+
+        req = make_mocked_request("POST", "/config")
+        req.read = AsyncMock(
+            return_value=b'{"base_url":"http://ha.local:8123","token":"t","targets_json":""}'
+        )
+        mock_resp = AsyncMock()
+        mock_resp.status = 400
+        mock_resp.text = AsyncMock(return_value="bad request")
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+        session = AsyncMock()
+        session.post = lambda *a, **kw: mock_resp
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok"}):
+            with patch("aiohttp.ClientSession", return_value=session):
+                resp = await record.handle_config_save(req)
+        assert resp.status == 502
+        data = json.loads(resp.body)
+        assert data["ok"] is False
+
+    @pytest.mark.asyncio
+    async def test_success_with_connection_drop(self):
+        import json
+
+        import aiohttp
+
+        import record
+
+        req = make_mocked_request("POST", "/config")
+        req.read = AsyncMock(
+            return_value=b'{"base_url":"http://ha.local:8123","token":"t","targets_json":""}'
+        )
+        ok_resp = AsyncMock()
+        ok_resp.status = 200
+        ok_resp.__aenter__ = AsyncMock(return_value=ok_resp)
+        ok_resp.__aexit__ = AsyncMock(return_value=False)
+
+        drop_cm = AsyncMock()
+        drop_cm.__aenter__ = AsyncMock(side_effect=aiohttp.ClientConnectionError("dropped"))
+        drop_cm.__aexit__ = AsyncMock(return_value=False)
+
+        call_count = 0
+
+        def _post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return ok_resp if call_count == 1 else drop_cm
+
+        session = AsyncMock()
+        session.post = _post
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok"}):
+            with patch("aiohttp.ClientSession", return_value=session):
+                resp = await record.handle_config_save(req)
+        data = json.loads(resp.body)
+        assert data["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_unexpected_exception_returns_502(self):
+        import json
+
+        import record
+
+        req = make_mocked_request("POST", "/config")
+        req.read = AsyncMock(
+            return_value=b'{"base_url":"http://ha.local:8123","token":"t","targets_json":""}'
+        )
+
+        def _boom(*a, **kw):
+            raise RuntimeError("boom")
+
+        session = AsyncMock()
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+        session.post = _boom
+        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok"}):
+            with patch("aiohttp.ClientSession", return_value=session):
+                resp = await record.handle_config_save(req)
+        assert resp.status == 502
+        data = json.loads(resp.body)
+        assert data["ok"] is False
+        assert "boom" in data["error"]

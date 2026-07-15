@@ -650,7 +650,10 @@ async def handle_config_save(request):
     supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
     if not supervisor_token:
         return web.json_response(
-            {"ok": False, "error": "SUPERVISOR_TOKEN not available — not running under HA supervisor"},
+            {
+                "ok": False,
+                "error": "SUPERVISOR_TOKEN not available — not running under HA supervisor",
+            },
             status=503,
         )
     try:
@@ -673,7 +676,8 @@ async def handle_config_save(request):
                 if r.status != 200:
                     text = await r.text()
                     return web.json_response(
-                        {"ok": False, "error": f"supervisor returned {r.status}: {text}"}, status=502
+                        {"ok": False, "error": f"supervisor returned {r.status}: {text}"},
+                        status=502,
                     )
             # restart addon so new config takes effect
             async with s.post(
@@ -681,7 +685,7 @@ async def handle_config_save(request):
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as r:
-                pass  # best-effort — connection will drop on restart
+                pass  # pragma: no cover — best-effort, connection drops on restart
     except aiohttp.ClientConnectionError:
         pass  # expected — addon restarted mid-request
     except Exception as e:
