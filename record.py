@@ -46,8 +46,7 @@ def _load_config():
 
     CFG = cfg
     TARGETS = {t["name"]: t for t in CFG.get("targets", [])}
-    if not TARGETS:
-        TARGETS = {"public": {"name": "public", "base_url": "", "auth": {"strategy": "none"}}}
+    TARGETS.setdefault("public", {"name": "public", "base_url": "", "auth": {"strategy": "none"}})
     DEFAULT_TARGET = next(iter(TARGETS))
 
 
@@ -157,7 +156,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
     target = TARGETS.get(target_name or DEFAULT_TARGET)
     if target is None:
         raise ValueError(f"unknown target: {target_name!r}. Configured: {list(TARGETS)}")
-    base_url = target["base_url"].rstrip("/")
+    base_url = target.get("base_url", "").rstrip("/")
     auth_cfg = target.get("auth", {"strategy": "none"})
     strategy = auth_cfg.get("strategy", "none")
 
@@ -165,7 +164,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
     if apply_auth is None:
         raise ValueError(f"unknown auth strategy: {strategy!r}")
 
-    is_ha_url = strategy == "ha_token" and url.startswith(base_url)
+    is_ha_url = strategy == "ha_token" and bool(base_url) and url.startswith(base_url)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     safe_root = OUT_DIR.resolve()
@@ -240,7 +239,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
 
 async def _check_target_health(target):
     name = target["name"]
-    base_url = target["base_url"].rstrip("/")
+    base_url = target.get("base_url", "").rstrip("/")
     auth_cfg = target.get("auth", {"strategy": "none"})
     strategy = auth_cfg.get("strategy", "none")
     if not base_url:
@@ -386,12 +385,13 @@ async def handle_record_ha(request):
         return web.json_response(
             {"ok": False, "error": f"unknown target: {target_name!r}"}, status=400
         )
-    base = target["base_url"].rstrip("/")
-    if not base:
+    base = target.get("base_url", "").rstrip("/")
+    strategy = target.get("auth", {}).get("strategy", "none")
+    if not base or strategy != "ha_token":
         return web.json_response(
             {
                 "ok": False,
-                "error": f"target {target_name!r} has no base_url — use /record with a full URL instead",
+                "error": f"target {target_name!r} requires strategy ha_token and a base_url — use /record with a full URL for other targets",
             },
             status=400,
         )
@@ -523,17 +523,19 @@ _CONFIG_UI = """<!DOCTYPE html>
     <h2 id="form-title">New target</h2>
     <button class="panel-close" onclick="closeForm()" title="Cancel">✕</button>
   </div>
-  <label>Name</label>
-  <input id="f-name" type="text" placeholder="ha">
-  <label>Base URL</label>
-  <input id="f-url" type="url" placeholder="http://homeassistant.local:8123">
-  <div class="hint">URL reachable from within the DashSnap container. Examples: http://homeassistant.local:8123, http://192.168.1.10:8123, or your Nabu Casa URL https://xxxx.ui.nabu.casa.</div>
   <label>Auth strategy</label>
   <select id="f-strat" onchange="onStratChange()">
     <option value="ha_token">ha_token — inject HA long-lived token</option>
     <option value="http_header">http_header — custom request headers</option>
     <option value="none">none — no authentication</option>
   </select>
+  <label>Name</label>
+  <input id="f-name" type="text" placeholder="ha">
+  <div id="f-url-row">
+  <label>Base URL</label>
+  <input id="f-url" type="url" placeholder="http://homeassistant.local:8123">
+  <div class="hint">URL reachable from within the DashSnap container. Required for ha_token strategy only.</div>
+  </div>
   <div id="f-token-row">
     <label>Token</label>
     <div id="f-token-saved-box" style="display:none">
@@ -591,7 +593,7 @@ function render() {
     row.innerHTML = `
       <div class="trow-info">
         <div class="trow-name">${esc(t.name || '(unnamed)')}</div>
-        <div class="trow-url">${esc(t.base_url || '')}</div>
+        <div class="trow-url">${t.base_url ? esc(t.base_url) : ''}</div>
       </div>
       <span class="badge ${badgeClass(strat)}">${esc(strat)}</span>
       <button class="trow-btn" onclick="openForm(${i})">Edit</button>
@@ -615,6 +617,7 @@ function openForm(idx) {
   document.getElementById('f-token-input-box').style.display = tokenSaved ? 'none' : '';
   document.getElementById('f-token').placeholder = 'eyJ...';
   document.getElementById('f-headers').value = strat === 'http_header' ? JSON.stringify((t.auth && t.auth.headers) || {}) : '';
+  document.getElementById('f-url-row').style.display = strat === 'ha_token' ? '' : 'none';
   document.getElementById('f-token-row').style.display = strat === 'ha_token' ? '' : 'none';
   document.getElementById('f-header-row').style.display = strat === 'http_header' ? '' : 'none';
   document.getElementById('edit-panel').style.display = '';
@@ -635,18 +638,21 @@ function closeForm() {
 
 function onStratChange() {
   const s = document.getElementById('f-strat').value;
+  document.getElementById('f-url-row').style.display = s === 'ha_token' ? '' : 'none';
   document.getElementById('f-token-row').style.display = s === 'ha_token' ? '' : 'none';
   document.getElementById('f-header-row').style.display = s === 'http_header' ? '' : 'none';
 }
 
 function formSave() {
   const name = document.getElementById('f-name').value.trim();
-  const base_url = document.getElementById('f-url').value.trim();
   if (!name) { alert('Name is required'); return false; }
-  if (!base_url) { alert('Base URL is required'); return false; }
   const strat = document.getElementById('f-strat').value;
   const auth = {strategy: strat};
+  const t = {name, auth};
   if (strat === 'ha_token') {
+    const base_url = document.getElementById('f-url').value.trim();
+    if (!base_url) { alert('Base URL is required for ha_token strategy'); return false; }
+    t.base_url = base_url;
     const val = document.getElementById('f-token').value.trim();
     const saved = document.getElementById('f-token').dataset.saved === '1';
     if (val) auth.token = val;
@@ -656,7 +662,6 @@ function formSave() {
     try { auth.headers = JSON.parse(document.getElementById('f-headers').value || '{}'); }
     catch(e) { alert('Invalid JSON in headers: ' + e.message); return false; }
   }
-  const t = {name, base_url, auth};
   if (editIdx !== null) targets[editIdx] = t; else targets.push(t);
   render();
   closeForm();
