@@ -439,6 +439,35 @@ class TestConfigShim:
         targets = {t["name"]: t for t in cfg["targets"]}
         assert targets["default"]["auth"]["strategy"] == "ha_token"
 
+    def test_load_config_with_targets_json(self, tmp_path):
+        import json
+
+        import record
+
+        cfg = tmp_path / "options.json"
+        targets = [
+            {
+                "name": "ha",
+                "base_url": "http://ha:8123",
+                "auth": {"strategy": "ha_token", "token": "t"},
+            }
+        ]
+        cfg.write_text(json.dumps({"targets_json": json.dumps(targets)}))
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            record._load_config()
+        assert "ha" in record.TARGETS
+
+    def test_load_config_invalid_targets_json_raises(self, tmp_path):
+        import json
+
+        import record
+
+        cfg = tmp_path / "options.json"
+        cfg.write_text(json.dumps({"targets_json": "not-json"}))
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            with pytest.raises(SystemExit):
+                record._load_config()
+
 
 # ---------------------------------------------------------------------------
 # _check_target_health
@@ -625,7 +654,7 @@ class TestHandleConfigSave:
         assert resp.status == 200
         data = json.loads(resp.body)
         assert data["ok"] is True
-        assert data["restart_required"] is True
+        assert "restart_required" not in data
         saved = json.loads(cfg.read_text())
         assert saved["base_url"] == "http://ha.local:8123"
 

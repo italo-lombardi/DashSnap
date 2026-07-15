@@ -15,59 +15,40 @@ from playwright.async_api import async_playwright
 # Config load + env var overlay + backward-compat shim
 # ---------------------------------------------------------------------------
 
-_cfg_path = os.environ.get("CONFIG_PATH", "/data/options.json")
-try:
-    with open(_cfg_path) as _f:
-        CFG = json.load(_f)  # pragma: no cover
-except FileNotFoundError:
-    CFG = {}
 
-# Env var overrides (single-target convenience — wraps into targets list below)
-if os.environ.get("DASHSNAP_BASE_URL"):  # pragma: no cover
-    CFG["base_url"] = os.environ["DASHSNAP_BASE_URL"]
-if (
-    os.environ.get("DASHSNAP_AUTH_STRATEGY")
-    or os.environ.get("DASHSNAP_AUTH_TOKEN")
-    or os.environ.get("DASHSNAP_AUTH_HEADERS")
-):  # pragma: no cover
-    auth = CFG.setdefault("auth", {})
-    if os.environ.get("DASHSNAP_AUTH_STRATEGY"):
-        auth["strategy"] = os.environ["DASHSNAP_AUTH_STRATEGY"]
-    if os.environ.get("DASHSNAP_AUTH_TOKEN"):
-        s = auth.get("strategy", "ha_token")
-        if s == "http_header":
-            auth.setdefault("headers", {})["Authorization"] = (
-                f"Bearer {os.environ['DASHSNAP_AUTH_TOKEN']}"
-            )
-        else:
-            auth["token"] = os.environ["DASHSNAP_AUTH_TOKEN"]
-    if os.environ.get("DASHSNAP_AUTH_HEADERS"):
-        try:
-            auth["headers"] = json.loads(os.environ["DASHSNAP_AUTH_HEADERS"])
-        except json.JSONDecodeError as e:
-            raise SystemExit(f"DASHSNAP_AUTH_HEADERS is not valid JSON: {e}") from e
+def _load_config():
+    global CFG, TARGETS, DEFAULT_TARGET
+    cfg_path = os.environ.get("CONFIG_PATH", "/data/options.json")
+    try:
+        with open(cfg_path) as _f:
+            cfg = json.load(_f)
+    except FileNotFoundError:
+        cfg = {}
 
-# Backward-compat + multi-target shim (pragma: no cover — runs at import from config file)
-if "targets" not in CFG:  # pragma: no cover
-    targets_json = CFG.get("targets_json", "").strip()
-    if targets_json:
-        try:
-            CFG["targets"] = json.loads(targets_json)
-        except json.JSONDecodeError as e:
-            raise SystemExit(f"targets_json is not valid JSON: {e}") from e
-    elif "base_url" in CFG:
-        if "token" in CFG and "auth" not in CFG:
-            CFG["auth"] = {"strategy": "ha_token", "token": CFG["token"]}
-        CFG["targets"] = [
-            {
-                "name": "default",
-                "base_url": CFG["base_url"],
-                "auth": CFG.get("auth", {"strategy": "ha_token"}),
-            }
-        ]
+    if "targets" not in cfg:
+        targets_json = cfg.get("targets_json", "").strip()
+        if targets_json:
+            try:
+                cfg["targets"] = json.loads(targets_json)
+            except json.JSONDecodeError as e:
+                raise SystemExit(f"targets_json is not valid JSON: {e}") from e
+        elif "base_url" in cfg:
+            if "token" in cfg and "auth" not in cfg:
+                cfg["auth"] = {"strategy": "ha_token", "token": cfg["token"]}
+            cfg["targets"] = [
+                {
+                    "name": "default",
+                    "base_url": cfg["base_url"],
+                    "auth": cfg.get("auth", {"strategy": "ha_token"}),
+                }
+            ]
 
-TARGETS = {t["name"]: t for t in CFG.get("targets", [])}
-DEFAULT_TARGET = next(iter(TARGETS)) if TARGETS else None
+    CFG = cfg
+    TARGETS = {t["name"]: t for t in CFG.get("targets", [])}
+    DEFAULT_TARGET = next(iter(TARGETS)) if TARGETS else None
+
+
+_load_config()  # pragma: no cover
 
 log = logging.getLogger("dashsnap")
 
@@ -672,7 +653,7 @@ async function save() {
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'save failed');
     msg.className = 'msg ok';
-    msg.textContent = j.restart_required ? 'Saved. Restart the addon to apply changes.' : 'Saved. Restarting addon…';
+    msg.textContent = j.restarting ? 'Saved. Restarting addon…' : 'Saved. Configuration applied.';
   } catch(e) {
     msg.className = 'msg err'; msg.textContent = e.message;
   } finally {
@@ -759,10 +740,11 @@ async def handle_config_save(request):
             existing.update(options)
             with open(cfg_path, "w") as f:
                 json.dump(existing, f, indent=2)
+            _load_config()
         except Exception as e:
             log.error("config save (local) failed: %s", e)
             return web.json_response({"ok": False, "error": str(e)}, status=500)
-        return web.json_response({"ok": True, "restart_required": True})
+        return web.json_response({"ok": True})
 
     headers = {"Authorization": f"Bearer {supervisor_token}", "Content-Type": "application/json"}
     try:
