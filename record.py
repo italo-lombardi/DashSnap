@@ -439,10 +439,266 @@ async def handle_ha_dashboards(request):
 
 
 # ---------------------------------------------------------------------------
+# Config UI (ingress panel)
+# ---------------------------------------------------------------------------
+
+_CONFIG_UI = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DashSnap — Configure</title>
+<style>
+  :root { --ha: #03a9f4; --bg: #1c1c1c; --card: #2a2a2a; --border: #3a3a3a; --text: #e0e0e0; --muted: #888; --err: #f44336; --ok: #4caf50; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
+  h1 { font-size: 1.3rem; font-weight: 600; color: var(--ha); margin-bottom: 20px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 4px; margin-top: 12px; }
+  label:first-child { margin-top: 0; }
+  input, select, textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; font-size: .9rem; font-family: inherit; }
+  textarea { font-family: monospace; resize: vertical; min-height: 80px; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ha); }
+  .mode-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab { flex: 1; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--muted); cursor: pointer; font-size: .85rem; text-align: center; transition: .15s; }
+  .tab.active { border-color: var(--ha); color: var(--ha); background: rgba(3,169,244,.1); }
+  .target-card { border: 1px solid var(--border); border-radius: 6px; padding: 14px; margin-bottom: 10px; position: relative; }
+  .target-card h3 { font-size: .85rem; color: var(--muted); margin-bottom: 10px; }
+  .remove-btn { position: absolute; top: 10px; right: 10px; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.1rem; padding: 0 4px; }
+  .remove-btn:hover { color: var(--err); }
+  .add-btn { width: 100%; padding: 8px; border: 1px dashed var(--border); border-radius: 4px; background: none; color: var(--muted); cursor: pointer; font-size: .85rem; margin-top: 4px; }
+  .add-btn:hover { border-color: var(--ha); color: var(--ha); }
+  .save-btn { width: 100%; padding: 10px; background: var(--ha); color: #fff; border: none; border-radius: 4px; font-size: .95rem; cursor: pointer; margin-top: 8px; font-weight: 600; }
+  .save-btn:hover { opacity: .9; }
+  .save-btn:disabled { opacity: .5; cursor: default; }
+  .msg { padding: 10px 14px; border-radius: 4px; margin-top: 12px; font-size: .85rem; display: none; }
+  .msg.ok { background: rgba(76,175,80,.15); border: 1px solid var(--ok); color: var(--ok); display: block; }
+  .msg.err { background: rgba(244,67,54,.15); border: 1px solid var(--err); color: var(--err); display: block; }
+  .hint { font-size: .75rem; color: var(--muted); margin-top: 4px; }
+  .header-row { display: flex; gap: 8px; }
+  .header-row input:first-child { flex: 1; }
+  .header-row input:last-child { flex: 2; }
+</style>
+</head>
+<body>
+<h1>DashSnap — Configure</h1>
+
+<div class="card">
+  <div class="mode-tabs">
+    <div class="tab active" id="tab-single" onclick="setMode('single')">Single target (HA)</div>
+    <div class="tab" id="tab-multi" onclick="setMode('multi')">Multi-target</div>
+  </div>
+
+  <!-- single mode -->
+  <div id="single-mode">
+    <label>HA Base URL</label>
+    <input id="s-url" type="url" placeholder="http://homeassistant.local:8123">
+    <div class="hint">URL reachable from within the DashSnap container</div>
+    <label>Long-lived Access Token</label>
+    <input id="s-token" type="password" placeholder="eyJ...">
+    <div class="hint">HA → Profile → Long-lived access tokens → Create token</div>
+  </div>
+
+  <!-- multi mode -->
+  <div id="multi-mode" style="display:none">
+    <div id="targets-list"></div>
+    <button class="add-btn" onclick="addTarget()">+ Add target</button>
+  </div>
+
+  <button class="save-btn" onclick="save()">Save &amp; Restart</button>
+  <div class="msg" id="msg"></div>
+</div>
+
+<script>
+const STRATEGIES = ['ha_token','http_header','none'];
+let mode = 'single';
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('tab-single').classList.toggle('active', m === 'single');
+  document.getElementById('tab-multi').classList.toggle('active', m === 'multi');
+  document.getElementById('single-mode').style.display = m === 'single' ? '' : 'none';
+  document.getElementById('multi-mode').style.display = m === 'multi' ? '' : 'none';
+}
+
+function addTarget(t) {
+  t = t || {name:'', base_url:'', auth:{strategy:'ha_token', token:'', headers:{}}};
+  const strat = t.auth.strategy || 'ha_token';
+  const headerVal = strat === 'http_header' ? JSON.stringify(t.auth.headers || {}) : '';
+  const tokenVal = t.auth.token || '';
+  const id = 'tgt-' + Date.now() + Math.random().toString(36).slice(2);
+  const div = document.createElement('div');
+  div.className = 'target-card';
+  div.id = id;
+  div.innerHTML = `
+    <h3>Target</h3>
+    <button class="remove-btn" onclick="document.getElementById('${id}').remove()">✕</button>
+    <label>Name</label>
+    <input class="t-name" type="text" placeholder="ha" value="${esc(t.name)}">
+    <label>Base URL</label>
+    <input class="t-url" type="url" placeholder="http://homeassistant.local:8123" value="${esc(t.base_url)}">
+    <label>Auth strategy</label>
+    <select class="t-strat" onchange="onStratChange(this)">
+      ${STRATEGIES.map(s => `<option value="${s}"${s===strat?' selected':''}>${s}</option>`).join('')}
+    </select>
+    <div class="t-token-row" style="display:${strat==='ha_token'?'':'none'}">
+      <label>Token</label>
+      <input class="t-token" type="password" placeholder="eyJ..." value="${esc(tokenVal)}">
+    </div>
+    <div class="t-header-row" style="display:${strat==='http_header'?'':'none'}">
+      <label>Headers (JSON object)</label>
+      <textarea class="t-headers" rows="2" placeholder='{"Authorization":"Bearer glsa_xxx"}'>${esc(headerVal)}</textarea>
+    </div>`;
+  document.getElementById('targets-list').appendChild(div);
+}
+
+function onStratChange(sel) {
+  const card = sel.closest('.target-card');
+  card.querySelector('.t-token-row').style.display = sel.value === 'ha_token' ? '' : 'none';
+  card.querySelector('.t-header-row').style.display = sel.value === 'http_header' ? '' : 'none';
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+function buildPayload() {
+  if (mode === 'single') {
+    return {
+      base_url: document.getElementById('s-url').value.trim(),
+      token: document.getElementById('s-token').value.trim(),
+      targets_json: ''
+    };
+  }
+  const cards = document.querySelectorAll('#targets-list .target-card');
+  const targets = [];
+  for (const c of cards) {
+    const strat = c.querySelector('.t-strat').value;
+    const auth = {strategy: strat};
+    if (strat === 'ha_token') auth.token = c.querySelector('.t-token').value.trim();
+    if (strat === 'http_header') {
+      try { auth.headers = JSON.parse(c.querySelector('.t-headers').value || '{}'); }
+      catch { throw new Error('Invalid JSON in headers for target "' + c.querySelector('.t-name').value + '"'); }
+    }
+    targets.push({name: c.querySelector('.t-name').value.trim(), base_url: c.querySelector('.t-url').value.trim(), auth});
+  }
+  return {base_url: '', token: '', targets_json: JSON.stringify(targets)};
+}
+
+async function save() {
+  const btn = document.querySelector('.save-btn');
+  const msg = document.getElementById('msg');
+  msg.className = 'msg'; msg.textContent = '';
+  try {
+    const payload = buildPayload();
+    btn.disabled = true; btn.textContent = 'Saving…';
+    const r = await fetch('config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'save failed');
+    msg.className = 'msg ok'; msg.textContent = 'Saved. Restarting addon…';
+  } catch(e) {
+    msg.className = 'msg err'; msg.textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save & Restart';
+  }
+}
+
+// Load current config on page load
+(async () => {
+  try {
+    const r = await fetch('config');
+    const j = await r.json();
+    if (j.targets_json) {
+      setMode('multi');
+      JSON.parse(j.targets_json).forEach(addTarget);
+    } else {
+      document.getElementById('s-url').value = j.base_url || '';
+      document.getElementById('s-token').value = j.token || '';
+    }
+  } catch {}
+})();
+</script>
+</body>
+</html>"""
+
+_SUPERVISOR_URL = "http://supervisor/addons/self/options"
+
+
+async def handle_config_ui(request):
+    """GET / — serve the ingress config page."""
+    return web.Response(text=_CONFIG_UI, content_type="text/html")
+
+
+async def handle_config_get(request):
+    """GET /config — return current options.json for the UI to pre-populate."""
+    cfg_path = os.environ.get("CONFIG_PATH", "/data/options.json")
+    try:
+        with open(cfg_path) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        data = {}
+    return web.json_response(
+        {
+            "ok": True,
+            "base_url": data.get("base_url", ""),
+            "token": data.get("token", ""),
+            "targets_json": data.get("targets_json", ""),
+        }
+    )
+
+
+async def handle_config_save(request):
+    """POST /config — write options via Supervisor API then restart."""
+    supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
+    if not supervisor_token:
+        return web.json_response(
+            {"ok": False, "error": "SUPERVISOR_TOKEN not available — not running under HA supervisor"},
+            status=503,
+        )
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "invalid JSON body"}, status=400)
+
+    allowed = {"base_url", "token", "targets_json"}
+    options = {k: v for k, v in body.items() if k in allowed}
+
+    headers = {"Authorization": f"Bearer {supervisor_token}", "Content-Type": "application/json"}
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.post(
+                _SUPERVISOR_URL,
+                json={"options": options},
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as r:
+                if r.status != 200:
+                    text = await r.text()
+                    return web.json_response(
+                        {"ok": False, "error": f"supervisor returned {r.status}: {text}"}, status=502
+                    )
+            # restart addon so new config takes effect
+            async with s.post(
+                "http://supervisor/addons/self/restart",
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as r:
+                pass  # best-effort — connection will drop on restart
+    except aiohttp.ClientConnectionError:
+        pass  # expected — addon restarted mid-request
+    except Exception as e:
+        log.error("config save failed: %s", e)
+        return web.json_response({"ok": False, "error": str(e)}, status=502)
+
+    return web.json_response({"ok": True})
+
+
+# ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
 
 app = web.Application()
+app.router.add_get("/", handle_config_ui)
+app.router.add_get("/config", handle_config_get)
+app.router.add_post("/config", handle_config_save)
 app.router.add_route("*", "/record", handle_record)
 app.router.add_route("*", "/record/ha", handle_record_ha)
 app.router.add_get("/health", handle_health)
