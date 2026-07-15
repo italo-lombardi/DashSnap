@@ -169,16 +169,12 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
     _raw_tag = re.sub(r"[^a-zA-Z0-9]+", "_", url.split("://")[-1].strip("/")) or "page"
     if not re.fullmatch(r"[a-zA-Z0-9_]+", _raw_tag):
         raise RuntimeError(f"unexpected tag after sanitisation: {_raw_tag!r}")
-    tag = _raw_tag
+    # Construct paths from a safe root — tag contains only [a-zA-Z0-9_]
+    safe_root = OUT_DIR.resolve()
+    tmp_dir = pathlib.Path(os.path.realpath(safe_root / f".tmp_{_raw_tag}_{stamp}"))
+    if os.path.commonpath([tmp_dir, safe_root]) != str(safe_root):
+        raise RuntimeError(f"path escapes OUT_DIR: {tmp_dir}")
     is_png = fmt == "png"
-
-    def _safe(path: pathlib.Path) -> pathlib.Path:
-        resolved = path.resolve()
-        if not str(resolved).startswith(str(OUT_DIR.resolve())):
-            raise RuntimeError(f"path escapes OUT_DIR: {resolved}")
-        return resolved
-
-    tmp_dir = _safe(OUT_DIR / f".tmp_{tag}_{stamp}")
     if not is_png:
         tmp_dir.mkdir(exist_ok=True)
 
@@ -210,7 +206,9 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
                     )
 
             if is_png:
-                final = _safe(OUT_DIR / f"{tag}_{stamp}.png")
+                final = pathlib.Path(os.path.realpath(safe_root / f"{_raw_tag}_{stamp}.png"))
+                if os.path.commonpath([final, safe_root]) != str(safe_root):
+                    raise RuntimeError(f"path escapes OUT_DIR: {final}")
                 await page.screenshot(path=str(final))
                 return str(final)
 
@@ -223,7 +221,9 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
     if not webms:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise RuntimeError("no video produced")
-    final = _safe(OUT_DIR / f"{tag}_{stamp}.webm")
+    final = pathlib.Path(os.path.realpath(safe_root / f"{_raw_tag}_{stamp}.webm"))
+    if os.path.commonpath([final, safe_root]) != str(safe_root):
+        raise RuntimeError(f"path escapes OUT_DIR: {final}")
     webms[0].replace(final)
     shutil.rmtree(tmp_dir, ignore_errors=True)
     return str(final)
