@@ -451,7 +451,7 @@ _CONFIG_UI = """<!DOCTYPE html>
 <style>
   :root{--ha:#03a9f4;--bg:#0d1117;--card:#161b22;--border:#21262d;--text:#e6edf3;--muted:#6e7681;--err:#f85149;--ok:#3fb950;--ha-dim:rgba(3,169,244,.1);--radius:8px}
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:28px 24px 56px;max-width:640px}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:28px 24px 56px}
   h1{font-size:1.2rem;font-weight:700;color:var(--ha);margin-bottom:2px;display:flex;align-items:center;gap:8px}
   .subtitle{font-size:.78rem;color:var(--muted);margin-bottom:28px}
   .section-label{font-size:.68rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
