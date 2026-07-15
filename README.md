@@ -9,7 +9,7 @@
 
 [![Add Repository to HA](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fitalo-lombardi%2FDashSnap)
 
-Record or screenshot any web page via headless Chromium — Home Assistant dashboards, Grafana, public pages, and more. Available as a **Home Assistant App** (HAOS/Supervised) or as a standalone **Docker container**.
+Record or screenshot any web page via headless Chromium — Home Assistant dashboards, Grafana, public pages, and more. Available as a **Home Assistant Add-on** (HAOS/Supervised) or as a standalone **Docker container**.
 
 ---
 
@@ -21,12 +21,12 @@ DashSnap runs a small HTTP API server (port 8099). You call it with a URL or HA 
 
 ## Installation
 
-### As a Home Assistant App (HAOS / Supervised)
+### As a Home Assistant Add-on (HAOS / Supervised)
 
 1. In HA, go to **Settings → Add-ons → Add-on store → ⋮ → Repositories**
 2. Add: `https://github.com/italo-lombardi/DashSnap`
 3. Install **DashSnap** from the list
-4. Configure (see below) and start
+4. Configure and start (see below)
 
 ### With Docker Compose (standalone)
 
@@ -42,48 +42,49 @@ curl http://localhost:8099/health
 
 ## Configuration
 
-DashSnap supports three modes depending on how you run it.
+### Via the ingress UI (recommended for HA add-on)
 
----
+Once the add-on is running, open the **DashSnap** panel in the HA sidebar. You'll find a friendly configuration page where you can add, edit and delete targets without touching JSON.
 
-### Mode 1 — Single HA target (HA App UI)
+- Auth strategy picker shows/hides relevant fields (`ha_token`, `http_header`, `none`)
+- Tokens are masked — a "Token saved" badge shows when one is already stored
+- Changes apply immediately — no restart needed
 
-The simplest setup. Just fill in two fields in the HA App config tab:
+### Via the HA Add-on config tab
 
-| Field | Description | Example |
-|---|---|---|
-| `base_url` | Your HA instance URL | `http://homeassistant.local:8123` |
-| `token` | HA long-lived access token | `eyJ...` |
+DashSnap supports three fields:
 
-Leave `targets_json` empty.
+| Field | Description |
+|---|---|
+| `base_url` | Your HA instance URL (single-target mode) |
+| `token` | HA long-lived access token (single-target mode) |
+| `targets_json` | JSON array of targets (multi-target mode — takes priority) |
+
+**PRIORITY RULE:** if `targets_json` is set, `base_url` and `token` are ignored entirely.
+
+#### Single target (HA only)
+
+Fill in `base_url` and `token`. Leave `targets_json` empty.
 
 **How to get a long-lived token:**
 1. HA → Profile (bottom left) → **Long-lived access tokens** → **Create token**
 2. Copy and paste into the `token` field
 
----
+#### Multiple targets (HA + Grafana + public pages)
 
-### Mode 2 — Multiple targets (HA App UI or Docker)
-
-Paste a JSON array into the `targets_json` field. Each target has its own URL and auth strategy.
+Leave `base_url` and `token` empty. Paste a JSON array into `targets_json`:
 
 ```json
 [
   {
     "name": "ha",
     "base_url": "http://homeassistant.local:8123",
-    "auth": {
-      "strategy": "ha_token",
-      "token": "eyJ..."
-    }
+    "auth": { "strategy": "ha_token", "token": "eyJ..." }
   },
   {
     "name": "grafana",
     "base_url": "https://grafana.example.com",
-    "auth": {
-      "strategy": "http_header",
-      "headers": { "Authorization": "Bearer glsa_xxxx" }
-    }
+    "auth": { "strategy": "http_header", "headers": { "Authorization": "Bearer glsa_xxxx" } }
   },
   {
     "name": "public",
@@ -98,14 +99,12 @@ Paste a JSON array into the `targets_json` field. Each target has its own URL an
 | Strategy | Use for | Credential |
 |---|---|---|
 | `ha_token` | Home Assistant | HA long-lived token |
-| `http_header` | Grafana, Kibana, any API-key app | Any HTTP header (e.g. `Authorization`) |
+| `http_header` | Grafana, Kibana, any API-key app | Any HTTP header |
 | `none` | Public pages, LAN-only dashboards | None |
 
----
+### Via Docker — options.json
 
-### Mode 3 — Docker with options.json
-
-Mount an `options.json` file. Same format as Mode 2 above (or the flat Mode 1 format for a single HA target).
+Mount an `options.json` file (same format as the multi-target JSON above):
 
 ```yaml
 # docker-compose.yml
@@ -114,11 +113,7 @@ volumes:
   - ./recordings:/media/dashsnap
 ```
 
-Recordings are saved to `./recordings/` on the host.
-
----
-
-### Mode 4 — Docker with environment variables (no config file)
+### Via Docker — environment variables (no config file)
 
 ```bash
 docker run -d \
@@ -136,85 +131,44 @@ docker run -d \
 
 ### `GET/POST /record/ha` — Record an HA page
 
-For Home Assistant pages. Just provide the path — the base URL is taken from the target config automatically.
-
 ```bash
-# Record a dashboard view as a 30-second video
 curl "http://localhost:8099/record/ha?path=/lovelace/0&seconds=30"
-
-# Screenshot a dashboard
 curl "http://localhost:8099/record/ha?path=/lovelace/0&format=png"
-
-# Record with a specific target
-curl "http://localhost:8099/record/ha?path=/energy&target=ha&format=png"
 ```
-
-**Parameters:**
 
 | Param | Required | Default | Description |
 |---|---|---|---|
-| `path` | Yes | — | HA route, e.g. `/lovelace/0`, `/history`, `/energy` |
+| `path` | Yes | — | HA route, e.g. `/lovelace/0`, `/energy` |
 | `target` | No | first target | Named target from config |
 | `seconds` | No | 30 | Video duration (max 3600). Ignored for `png`. |
 | `format` | No | `webm` | `webm` or `png` |
 | `viewport_width` | No | 1920 | Width in pixels |
 | `viewport_height` | No | 1080 | Height in pixels |
 
----
-
 ### `GET/POST /record` — Record any URL
 
-For any web page — Grafana, public sites, intranet dashboards.
-
 ```bash
-# Record Grafana dashboard as video
 curl "http://localhost:8099/record?url=https://grafana.example.com/d/xyz&target=grafana&seconds=15"
-
-# Screenshot a public page
-curl "http://localhost:8099/record?url=https://www.example.com&target=public&format=png"
+curl "http://localhost:8099/record?url=https://www.example.com&format=png"
 ```
 
-**Parameters:** same as `/record/ha` but with `url` (required, absolute) instead of `path`.
-
----
+Same parameters as `/record/ha` but with `url` (required, absolute) instead of `path`.
 
 ### `GET /health` — Check connectivity
-
-Returns the health status of all configured targets.
 
 ```bash
 curl http://localhost:8099/health
 ```
 
-```json
-{
-  "ok": true,
-  "targets": [
-    {"name": "ha", "ok": true, "strategy": "ha_token", "base_url": "...", "ha": "API running."},
-    {"name": "grafana", "ok": true, "strategy": "http_header", "base_url": "...", "http_status": 200}
-  ]
-}
-```
-
----
-
 ### `GET /targets` — List configured targets
-
-Returns target names and strategies (no secrets).
 
 ```bash
 curl http://localhost:8099/targets
 ```
 
-```json
-{"ok": true, "targets": [{"name": "ha", "strategy": "ha_token"}, {"name": "grafana", "strategy": "http_header"}]}
-```
-
----
-
 ### `GET /ha/dashboards` — List HA dashboards
 
-Lists all user-created HA dashboards with their paths. Requires an `ha_token` target.
+Requires an `ha_token` target.
 
 ```bash
 curl http://localhost:8099/ha/dashboards
@@ -222,64 +176,25 @@ curl http://localhost:8099/ha/dashboards
 
 ---
 
-## Using from Home Assistant automations
+## Where recordings are saved
 
-Install the [DashSnap Integration](https://github.com/italo-lombardi/DashSnap-Integration) to trigger recordings directly from HA scripts and automations.
-
-```yaml
-# Record an HA dashboard
-service: dashsnap.record_ha
-data:
-  path: /lovelace/0
-  target: ha
-  seconds: 30
-  format: webm
-
-# Record any URL
-service: dashsnap.record
-data:
-  url: https://grafana.example.com/d/xyz
-  target: grafana
-  format: png
-```
+| Setup | Default location |
+|---|---|
+| HA Add-on | `/media/dashsnap/` (visible in HA Media browser) |
+| Docker Compose | `./recordings/` next to `docker-compose.yml` |
 
 ---
 
-## Where recordings are saved
+## Using from HA automations
 
-| Setup | Default location | How to change |
-|---|---|---|
-| HA App | `/media/dashsnap/` (HA Media browser) | Not configurable from the App UI |
-| Docker Compose | `./recordings/` next to `docker-compose.yml` | Edit the volume mount (see below) |
-| Docker run | `/media/dashsnap/` inside the container | Mount a host path with `-v` |
-
-### Docker Compose — point recordings anywhere
-
-Edit the left side of the volume mount in `docker-compose.yml`:
+Install the [DashSnap Integration](https://github.com/italo-lombardi/DashSnap-Integration) to trigger recordings from HA scripts and automations.
 
 ```yaml
-volumes:
-  - ~/Downloads:/media/dashsnap          # save to Downloads folder
-  - /mnt/nas/recordings:/media/dashsnap  # save to NAS
-  - ./recordings:/media/dashsnap         # default — next to compose file
-```
-
-### Docker run — save to Downloads
-
-```bash
-docker run -d \
-  -p 8099:8099 \
-  -v ~/Downloads:/media/dashsnap \
-  -e DASHSNAP_BASE_URL=http://homeassistant.local:8123 \
-  -e DASHSNAP_AUTH_STRATEGY=ha_token \
-  -e DASHSNAP_AUTH_TOKEN=eyJ... \
-  dashsnap
-```
-
-The `/record` and `/record/ha` responses always include the full file path inside the container, so you always know exactly what was saved:
-
-```json
-{"ok": true, "file": "/media/dashsnap/lovelace_0_20260714_193914.webm"}
+service: dashsnap.record_ha
+data:
+  path: /lovelace/0
+  seconds: 30
+  format: webm
 ```
 
 ---
@@ -287,3 +202,4 @@ The `/record` and `/record/ha` responses always include the full file path insid
 ## Sibling projects
 
 - **[DashSnap Integration](https://github.com/italo-lombardi/DashSnap-Integration)** — HA custom integration to trigger DashSnap from automations and scripts
+

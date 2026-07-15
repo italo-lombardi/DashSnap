@@ -630,6 +630,20 @@ class TestHandleConfigGet:
         assert data["ok"] is True
         assert data["base_url"] == ""
 
+    async def test_invalid_json_file_returns_empty(self, tmp_path):
+        import json
+
+        import record
+
+        cfg = tmp_path / "options.json"
+        cfg.write_text("not-valid-json{{{")
+        req = make_mocked_request("GET", "/config")
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            resp = await record.handle_config_get(req)
+        data = json.loads(resp.body)
+        assert data["ok"] is True
+        assert data["base_url"] == ""
+
 
 # ---------------------------------------------------------------------------
 # handle_config_save

@@ -649,7 +649,7 @@ async function save() {
   try {
     const payload = {base_url:'', token:'', targets_json: JSON.stringify(targets)};
     btn.disabled = true; btn.textContent = 'Saving…';
-    const r = await fetch('config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    const r = await fetch('./config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'save failed');
     msg.className = 'msg ok';
@@ -663,7 +663,7 @@ async function save() {
 
 (async () => {
   try {
-    const r = await fetch('config');
+    const r = await fetch('./config');
     const j = await r.json();
     if (j.targets_json) {
       try { targets = JSON.parse(j.targets_json); }
@@ -700,7 +700,7 @@ async def handle_config_get(request):
     try:
         with open(cfg_path) as f:
             data = json.load(f)
-    except FileNotFoundError:
+    except (FileNotFoundError, json.JSONDecodeError):
         data = {}
     return web.json_response(
         {
@@ -722,8 +722,8 @@ async def handle_config_save(request):
 
     allowed = {"base_url", "token", "targets_json"}
     options = {k: v for k, v in body.items() if k in allowed}
-    if not options.get("token") or options["token"] == "***":
-        options.pop("token", None)
+    if options.get("token") == "***":
+        options.pop("token", None)  # *** = unchanged, omit from update
     if options.get("targets_json"):
         try:
             json.loads(options["targets_json"])
