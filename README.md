@@ -17,6 +17,8 @@ Record or screenshot any web page via headless Chromium — Home Assistant dashb
 
 DashSnap runs a small HTTP API server (port 8099). You call it with a URL or HA path and it records a `.webm` video or takes a `.png` screenshot using a headless Chromium browser. It handles authentication automatically — HA token injection, HTTP header auth (Grafana, Kibana), or no auth for public pages.
 
+A built-in **`public` target** is always available — no configuration needed to record any public URL.
+
 ---
 
 ## Installation
@@ -42,27 +44,30 @@ curl http://localhost:8099/health
 
 ## Configuration
 
-### Via the ingress UI (recommended for HA add-on)
+### Via the ingress UI (recommended)
 
-Once the add-on is running, open the **DashSnap** panel in the HA sidebar. You'll find a friendly configuration page where you can add, edit and delete targets without touching JSON.
+Once the add-on is running, open the **DashSnap** panel in the HA sidebar. You'll find a friendly configuration page to add, edit and delete targets without touching JSON.
 
-- Auth strategy picker shows/hides relevant fields (`ha_token`, `http_header`, `none`)
+![Ingress config UI — target list](assets/00_ingress_ui.png)
+
+- **Auth strategy first** — pick `ha_token`, `http_header`, or `none`. Base URL only appears for `ha_token`.
+- **Built-in `public` target** — always present at the top, read-only. Use it with `/record?url=https://...` to capture any public page with zero config.
 - Tokens are masked — a "Token saved" badge shows when one is already stored
 - Changes apply immediately — no restart needed
 
-### Via the HA Add-on config tab
+![Ingress config UI — edit form](assets/01_ingress_edit.png)
 
-DashSnap supports three fields:
+### Via the HA Add-on config tab
 
 | Field | Description |
 |---|---|
-| `base_url` | Your HA instance URL (single-target mode) |
-| `token` | HA long-lived access token (single-target mode) |
-| `targets_json` | JSON array of targets (multi-target mode — takes priority) |
+| `base_url` | Your HA instance URL (single-target shorthand) |
+| `token` | HA long-lived access token (single-target shorthand) |
+| `targets_json` | JSON array of targets (takes priority over `base_url`/`token`) |
 
 **PRIORITY RULE:** if `targets_json` is set, `base_url` and `token` are ignored entirely.
 
-#### Single target (HA only)
+#### Single HA target
 
 Fill in `base_url` and `token`. Leave `targets_json` empty.
 
@@ -70,9 +75,9 @@ Fill in `base_url` and `token`. Leave `targets_json` empty.
 1. HA → Profile (bottom left) → **Long-lived access tokens** → **Create token**
 2. Copy and paste into the `token` field
 
-#### Multiple targets (HA + Grafana + public pages)
+#### Multiple targets
 
-Leave `base_url` and `token` empty. Paste a JSON array into `targets_json`:
+Paste a JSON array into `targets_json`:
 
 ```json
 [
@@ -83,12 +88,10 @@ Leave `base_url` and `token` empty. Paste a JSON array into `targets_json`:
   },
   {
     "name": "grafana",
-    "base_url": "https://grafana.example.com",
     "auth": { "strategy": "http_header", "headers": { "Authorization": "Bearer glsa_xxxx" } }
   },
   {
     "name": "public",
-    "base_url": "https://www.example.com",
     "auth": { "strategy": "none" }
   }
 ]
@@ -96,33 +99,21 @@ Leave `base_url` and `token` empty. Paste a JSON array into `targets_json`:
 
 **Auth strategies:**
 
-| Strategy | Use for | Credential |
+| Strategy | Use for | `base_url` required |
 |---|---|---|
-| `ha_token` | Home Assistant | HA long-lived token |
-| `http_header` | Grafana, Kibana, any API-key app | Any HTTP header |
-| `none` | Public pages, LAN-only dashboards | None |
+| `ha_token` | Home Assistant | Yes |
+| `http_header` | Grafana, Kibana, any API-key app | No |
+| `none` | Public pages, LAN-only dashboards | No |
 
 ### Via Docker — options.json
 
-Mount an `options.json` file (same format as the multi-target JSON above):
+Mount an `options.json` file:
 
 ```yaml
 # docker-compose.yml
 volumes:
-  - ./options.json:/data/options.json:ro
+  - ./options.json:/data/options.json:rw
   - ./recordings:/media/DashSnap
-```
-
-### Via Docker — environment variables (no config file)
-
-```bash
-docker run -d \
-  -p 8099:8099 \
-  -v ./recordings:/media/DashSnap \
-  -e DASHSNAP_BASE_URL=http://homeassistant.local:8123 \
-  -e DASHSNAP_AUTH_STRATEGY=ha_token \
-  -e DASHSNAP_AUTH_TOKEN=eyJ... \
-  dashsnap
 ```
 
 ---
@@ -139,7 +130,7 @@ curl "http://localhost:8099/record/ha?path=/lovelace/0&format=png"
 | Param | Required | Default | Description |
 |---|---|---|---|
 | `path` | Yes | — | HA route, e.g. `/lovelace/0`, `/energy` |
-| `target` | No | first target | Named target from config |
+| `target` | No | first target | Named `ha_token` target |
 | `seconds` | No | 30 | Video duration (max 3600). Ignored for `png`. |
 | `format` | No | `webm` | `webm` or `png` |
 | `viewport_width` | No | 1920 | Width in pixels |
@@ -152,9 +143,9 @@ curl "http://localhost:8099/record?url=https://grafana.example.com/d/xyz&target=
 curl "http://localhost:8099/record?url=https://www.example.com&format=png"
 ```
 
-Same parameters as `/record/ha` but with `url` (required, absolute) instead of `path`.
+Same parameters as `/record/ha` but with `url` (required, absolute) instead of `path`. Works with any target including the built-in `public`.
 
-### `GET /health` — Check connectivity
+### `GET /health` — Check connectivity and target health
 
 ```bash
 curl http://localhost:8099/health
@@ -183,6 +174,8 @@ curl http://localhost:8099/ha/dashboards
 | HA Add-on | `/media/DashSnap/` (visible in HA Media browser) |
 | Docker Compose | `./recordings/` next to `docker-compose.yml` |
 
+Recordings are named by capture timestamp + URL slug, e.g. `20260715_201234_lovelace_0.png`.
+
 ---
 
 ## Using from HA automations
@@ -202,4 +195,3 @@ data:
 ## Sibling projects
 
 - **[DashSnap Integration](https://github.com/italo-lombardi/DashSnap-Integration)** — HA custom integration to trigger DashSnap from automations and scripts
-

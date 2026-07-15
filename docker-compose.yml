@@ -26,7 +26,7 @@ services:
     ports:
       - "8099:8099"
     volumes:
-      - ./options.json:/data/options.json:rw
+      - ./options.json:/data/options.json:rw   # rw: ingress UI needs write access to save config
       - ${RECORDINGS_PATH:-./recordings}:/media/DashSnap
     # host.docker.internal lets DashSnap reach a service running on the Docker host.
     extra_hosts:
