@@ -657,7 +657,7 @@ async function save() {
   } catch(e) {
     msg.className = 'msg err'; msg.textContent = e.message;
   } finally {
-    btn.disabled = false; btn.textContent = 'Save & Restart';
+    btn.disabled = false; btn.textContent = btn.dataset.label || 'Save';
   }
 }
 
@@ -675,6 +675,8 @@ async function save() {
       targets = [{name:'default', base_url:j.base_url, auth:{strategy:'ha_token', token: j.token || ''}}];
     }
     render();
+    document.querySelector('.save-btn').textContent = j.has_supervisor ? 'Save & Restart' : 'Save';
+    document.querySelector('.save-btn').dataset.label = j.has_supervisor ? 'Save & Restart' : 'Save';
   } catch(e) {
     const msg = document.getElementById('msg');
     msg.className = 'msg err'; msg.textContent = 'Failed to load config: ' + e.message;
@@ -706,6 +708,7 @@ async def handle_config_get(request):
             "base_url": data.get("base_url", ""),
             "token": "***" if data.get("token") else "",
             "targets_json": data.get("targets_json", ""),
+            "has_supervisor": bool(os.environ.get("SUPERVISOR_TOKEN")),
         }
     )
 
