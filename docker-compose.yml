@@ -1,6 +1,6 @@
 # Run DashSnap as a plain Docker container (no HA supervisor).
 #
-#   1. cp options.sample.json options.json  &&  edit it
+#   1. cp options.sample.json options.json  &&  edit it  (or use the ingress UI)
 #   2. docker compose up --build
 #   3. curl http://localhost:8099/health
 #
@@ -18,7 +18,7 @@ services:
     ports:
       - "8099:8099"
     volumes:
-      - ./options.json:/data/options.json:ro
+      - ./options.json:/data/options.json:rw
       - ./recordings:/media/DashSnap   # ← change left side to redirect output
     # host.docker.internal lets DashSnap reach a service running on the Docker host.
     extra_hosts:
