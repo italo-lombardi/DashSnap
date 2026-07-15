@@ -671,7 +671,8 @@ async function save() {
     const r = await fetch('config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'save failed');
-    msg.className = 'msg ok'; msg.textContent = 'Saved. Restarting addon…';
+    msg.className = 'msg ok';
+    msg.textContent = j.restart_required ? 'Saved. Restart the addon to apply changes.' : 'Saved. Restarting addon…';
   } catch(e) {
     msg.className = 'msg err'; msg.textContent = e.message;
   } finally {
@@ -729,16 +730,7 @@ async def handle_config_get(request):
 
 
 async def handle_config_save(request):
-    """POST /config — write options via Supervisor API then restart."""
-    supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
-    if not supervisor_token:
-        return web.json_response(
-            {
-                "ok": False,
-                "error": "SUPERVISOR_TOKEN not available — not running under HA supervisor",
-            },
-            status=503,
-        )
+    """POST /config — write options via Supervisor API (HA) or directly to options.json (dev)."""
     try:
         body = await request.json()
     except Exception:
@@ -753,6 +745,24 @@ async def handle_config_save(request):
             json.loads(options["targets_json"])
         except json.JSONDecodeError as e:
             return web.json_response({"ok": False, "error": f"targets_json: {e}"}, status=400)
+
+    supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
+    if not supervisor_token:
+        # Dev / local mode — write directly to options.json
+        cfg_path = os.environ.get("CONFIG_PATH", "/data/options.json")
+        try:
+            try:
+                with open(cfg_path) as f:
+                    existing = json.load(f)
+            except FileNotFoundError:
+                existing = {}
+            existing.update(options)
+            with open(cfg_path, "w") as f:
+                json.dump(existing, f, indent=2)
+        except Exception as e:
+            log.error("config save (local) failed: %s", e)
+            return web.json_response({"ok": False, "error": str(e)}, status=500)
+        return web.json_response({"ok": True, "restart_required": True})
 
     headers = {"Authorization": f"Bearer {supervisor_token}", "Content-Type": "application/json"}
     try:

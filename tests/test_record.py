@@ -609,18 +609,41 @@ class TestHandleConfigGet:
 
 class TestHandleConfigSave:
     @pytest.mark.asyncio
-    async def test_no_supervisor_token_returns_503(self):
+    async def test_no_supervisor_token_writes_file(self, tmp_path):
+        import json
+
+        import record
+
+        cfg = tmp_path / "options.json"
+        cfg.write_text(json.dumps({"base_url": "", "token": "", "targets_json": ""}))
+        req = make_mocked_request("POST", "/config")
+        req.read = AsyncMock(
+            return_value=b'{"base_url":"http://ha.local:8123","token":"t","targets_json":""}'
+        )
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}, clear=True):
+            resp = await record.handle_config_save(req)
+        assert resp.status == 200
+        data = json.loads(resp.body)
+        assert data["ok"] is True
+        assert data["restart_required"] is True
+        saved = json.loads(cfg.read_text())
+        assert saved["base_url"] == "http://ha.local:8123"
+
+    @pytest.mark.asyncio
+    async def test_no_supervisor_token_file_error_returns_500(self, tmp_path):
         import json
 
         import record
 
         req = make_mocked_request("POST", "/config")
         req.read = AsyncMock(
-            return_value=b'{"base_url":"http://ha.local:8123","token":"t","targets_json":""}'
+            return_value=b'{"base_url":"http://ha.local:8123","token":"","targets_json":""}'
         )
-        with patch.dict("os.environ", {}, clear=True):
+        with patch.dict(
+            "os.environ", {"CONFIG_PATH": "/nonexistent/path/options.json"}, clear=True
+        ):
             resp = await record.handle_config_save(req)
-        assert resp.status == 503
+        assert resp.status == 500
         data = json.loads(resp.body)
         assert data["ok"] is False
 
