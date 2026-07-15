@@ -1,6 +1,6 @@
 # Run DashSnap as a plain Docker container (no HA supervisor).
 #
-#   1. cp options.sample.json options.json  &&  edit it
+#   1. cp options.sample.json options.json  &&  edit it  (or use the ingress UI)
 #   2. docker compose up --build
 #   3. curl http://localhost:8099/health
 #
@@ -8,18 +8,28 @@
 #   By default recordings go to ./recordings/ next to this file.
 #   Change the left side of the volume mount to any folder you want:
 #
-#     - ~/Downloads:/media/dashsnap        # save to Downloads
-#     - /mnt/nas/dashsnap:/media/dashsnap  # save to NAS
+#     - ~/Downloads:/media/DashSnap        # save to Downloads
+#     - /mnt/nas/DashSnap:/media/DashSnap  # save to NAS
+#
+# Local HA dev — see recordings in HA media browser:
+#   Create a .env file (gitignored):
+#
+#     RECORDINGS_PATH=/absolute/path/to/ha/config/media/DashSnap
+#     DASHSNAP_UID=1000   # match the HA user so HA can delete files
+#
+#   Then docker compose up -d — recordings write directly into HA's media folder.
+#   Default (no .env): RECORDINGS_PATH=./recordings, DASHSNAP_UID=0
 #
 services:
   dashsnap:
     build: .
     container_name: dashsnap
+    user: "${DASHSNAP_UID:-0}"
     ports:
       - "8099:8099"
     volumes:
-      - ./options.json:/data/options.json:ro
-      - ./recordings:/media/dashsnap   # ← change left side to redirect output
+      - ./options.json:/data/options.json:rw   # rw: ingress UI needs write access to save config
+      - ${RECORDINGS_PATH:-./recordings}:/media/DashSnap
     # host.docker.internal lets DashSnap reach a service running on the Docker host.
     extra_hosts:
       - "host.docker.internal:host-gateway"

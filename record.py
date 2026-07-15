@@ -6,6 +6,7 @@ import pathlib
 import re
 import shutil
 from datetime import datetime
+from urllib.parse import urlparse
 
 import aiohttp
 from aiohttp import web
@@ -45,14 +46,15 @@ def _load_config():
 
     CFG = cfg
     TARGETS = {t["name"]: t for t in CFG.get("targets", [])}
-    DEFAULT_TARGET = next(iter(TARGETS)) if TARGETS else None
+    TARGETS.setdefault("public", {"name": "public", "base_url": "", "auth": {"strategy": "none"}})
+    DEFAULT_TARGET = next(iter(TARGETS))
 
 
 _load_config()  # pragma: no cover
 
 log = logging.getLogger("dashsnap")
 
-OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/dashsnap"))
+OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/DashSnap"))
 
 DEFAULTS = {
     "seconds": 30,
@@ -150,11 +152,11 @@ AUTH_STRATEGIES = {
 # ---------------------------------------------------------------------------
 
 
-async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma: no cover
+async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  # pragma: no cover
     target = TARGETS.get(target_name or DEFAULT_TARGET)
     if target is None:
         raise ValueError(f"unknown target: {target_name!r}. Configured: {list(TARGETS)}")
-    base_url = target["base_url"].rstrip("/")
+    base_url = target.get("base_url", "").rstrip("/")
     auth_cfg = target.get("auth", {"strategy": "none"})
     strategy = auth_cfg.get("strategy", "none")
 
@@ -162,17 +164,24 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
     if apply_auth is None:
         raise ValueError(f"unknown auth strategy: {strategy!r}")
 
-    is_ha_url = strategy == "ha_token" and url.startswith(base_url)
+    is_ha_url = strategy == "ha_token" and bool(base_url) and url.startswith(base_url)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    safe_root = OUT_DIR.resolve()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # Sanitise tag to [a-zA-Z0-9_] only — prevents path traversal in filenames
-    _raw_tag = re.sub(r"[^a-zA-Z0-9]+", "_", url.split("://")[-1].strip("/")) or "page"
-    if not re.fullmatch(r"[a-zA-Z0-9_]+", _raw_tag):
-        raise RuntimeError(f"unexpected tag after sanitisation: {_raw_tag!r}")
-    tag = _raw_tag  # taint ends at the fullmatch check above
+    _path = urlparse(url).path.strip("/") or urlparse(url).netloc
+    _slug_raw = re.sub(r"[^a-zA-Z0-9]+", "_", _path)[:40].strip("_") or "page"
+    _m = re.fullmatch(r"[a-zA-Z0-9_]{1,40}", _slug_raw)
+    slug = _m.group(0) if _m else "page"  # taint ends: only fullmatch group used
     is_png = fmt == "png"
-    tmp_dir = OUT_DIR / (f".tmp_{tag}_{stamp}")
+
+    def _safe(p: pathlib.Path) -> pathlib.Path:
+        resolved = pathlib.Path(os.path.realpath(p))
+        if not str(resolved).startswith(str(safe_root) + os.sep):
+            raise RuntimeError(f"path escapes OUT_DIR: {resolved}")
+        return resolved
+
+    tmp_dir = _safe(OUT_DIR / f".tmp_{stamp}_{slug}")
     if not is_png:
         tmp_dir.mkdir(exist_ok=True)
 
@@ -203,8 +212,11 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
                         "Token invalid, or HA auth store shape changed."
                     )
 
+            if delay:
+                await page.wait_for_timeout(delay * 1000)
+
             if is_png:
-                final = OUT_DIR / f"{tag}_{stamp}.png"
+                final = _safe(OUT_DIR / f"{stamp}_{slug}.png")
                 await page.screenshot(path=str(final))
                 return str(final)
 
@@ -217,7 +229,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
     if not webms:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise RuntimeError("no video produced")
-    final = OUT_DIR / f"{tag}_{stamp}.webm"
+    final = _safe(OUT_DIR / f"{stamp}_{slug}.webm")
     webms[0].replace(final)
     shutil.rmtree(tmp_dir, ignore_errors=True)
     return str(final)
@@ -230,9 +242,11 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
 
 async def _check_target_health(target):
     name = target["name"]
-    base_url = target["base_url"].rstrip("/")
+    base_url = target.get("base_url", "").rstrip("/")
     auth_cfg = target.get("auth", {"strategy": "none"})
     strategy = auth_cfg.get("strategy", "none")
+    if not base_url:
+        return {"name": name, "ok": True, "strategy": strategy, "probed": False}
     try:
         async with aiohttp.ClientSession() as s:
             if strategy == "ha_token":
@@ -244,29 +258,29 @@ async def _check_target_health(target):
                 ) as r:
                     body = await r.json() if r.content_type == "application/json" else {}
                     ok = r.status == 200
-                    result = {"name": name, "ok": ok, "strategy": strategy, "base_url": base_url}
+                    result = {"name": name, "ok": ok, "strategy": strategy, "probed": True}
                     if ok:
-                        result["ha"] = body.get("message")
+                        result["detail"] = body.get("message")
                     else:
-                        result["hint"] = "bad token" if r.status == 401 else f"HTTP {r.status}"
+                        result["error"] = "bad token" if r.status == 401 else f"HTTP {r.status}"
                     return result
             else:
                 async with s.head(base_url, timeout=aiohttp.ClientTimeout(total=10)) as r:
                     ok = 200 <= r.status < 400
-                    return {
-                        "name": name,
-                        "ok": ok,
-                        "strategy": strategy,
-                        "base_url": base_url,
-                        "http_status": r.status,
-                    }
+                    result = {"name": name, "ok": ok, "strategy": strategy, "probed": True}
+                    if ok:
+                        result["detail"] = f"HTTP {r.status}"
+                    else:
+                        result["error"] = f"HTTP {r.status}"
+                    return result
     except Exception as e:
+        log.warning("health check failed for %s: %s", name, e)
         return {
             "name": name,
             "ok": False,
             "strategy": strategy,
-            "base_url": base_url,
-            "error": str(e),
+            "probed": True,
+            "error": "unreachable",
         }
 
 
@@ -324,6 +338,7 @@ def _params(q):
             "vh": int(q.get("viewport_height", DEFAULTS["viewport_height"])),
             "fmt": fmt,
             "target_name": q.get("target") or None,
+            "delay": min(int(q.get("delay", 0)), 60),
         }
     except (ValueError, TypeError) as e:
         raise web.HTTPBadRequest(reason=f"invalid param: {e}") from e
@@ -350,12 +365,17 @@ async def handle_record(request):
         )
     p = _params(q)
     try:
-        out = await record(url, p["seconds"], p["vw"], p["vh"], p["fmt"], p["target_name"])
+        out = await record(
+            url, p["seconds"], p["vw"], p["vh"], p["fmt"], p["target_name"], p["delay"]
+        )
     except Exception as e:
         log.error("record failed for %s: %s", url, e)
         return web.json_response({"ok": False, "error": str(e)}, status=500)
     log.info("recorded %s → %s", url, out)
-    return web.json_response({"ok": True, "file": out})
+    target_used = p["target_name"] or DEFAULT_TARGET
+    return web.json_response(
+        {"ok": True, "file": out, "target": target_used, "url": url, "format": p["fmt"]}
+    )
 
 
 async def handle_record_ha(request):
@@ -374,7 +394,16 @@ async def handle_record_ha(request):
         return web.json_response(
             {"ok": False, "error": f"unknown target: {target_name!r}"}, status=400
         )
-    base = target["base_url"].rstrip("/")
+    base = target.get("base_url", "").rstrip("/")
+    strategy = target.get("auth", {}).get("strategy", "none")
+    if not base or strategy != "ha_token":
+        return web.json_response(
+            {
+                "ok": False,
+                "error": f"target {target_name!r} requires strategy ha_token and a base_url — use /record with a full URL for other targets",
+            },
+            status=400,
+        )
     url = base + ("" if path.startswith("/") else "/") + path
     if not url.startswith(("http://", "https://")):
         return web.json_response(
@@ -382,20 +411,20 @@ async def handle_record_ha(request):
             status=400,
         )
     try:
-        out = await record(url, p["seconds"], p["vw"], p["vh"], p["fmt"], target_name)
+        out = await record(url, p["seconds"], p["vw"], p["vh"], p["fmt"], target_name, p["delay"])
     except Exception as e:
         log.error("record/ha failed for %s: %s", url, e)
         return web.json_response({"ok": False, "error": str(e)}, status=500)
     log.info("recorded %s → %s", url, out)
-    return web.json_response({"ok": True, "file": out})
+    return web.json_response(
+        {"ok": True, "file": out, "target": target_name, "url": url, "format": p["fmt"]}
+    )
 
 
 async def handle_health(request):
-    if not TARGETS:
-        return web.json_response({"ok": False, "error": "no targets configured"}, status=503)
     results = await asyncio.gather(*[_check_target_health(t) for t in TARGETS.values()])
     ok = all(r["ok"] for r in results)
-    return web.json_response({"ok": ok, "targets": list(results)}, status=200 if ok else 502)
+    return web.json_response({"ok": ok, "targets": list(results)})
 
 
 async def handle_targets(request):
@@ -503,17 +532,19 @@ _CONFIG_UI = """<!DOCTYPE html>
     <h2 id="form-title">New target</h2>
     <button class="panel-close" onclick="closeForm()" title="Cancel">✕</button>
   </div>
-  <label>Name</label>
-  <input id="f-name" type="text" placeholder="ha">
-  <label>Base URL</label>
-  <input id="f-url" type="url" placeholder="http://homeassistant.local:8123">
-  <div class="hint">URL reachable from within the DashSnap container. Examples: http://homeassistant.local:8123, http://192.168.1.10:8123, or your Nabu Casa URL https://xxxx.ui.nabu.casa.</div>
   <label>Auth strategy</label>
   <select id="f-strat" onchange="onStratChange()">
     <option value="ha_token">ha_token — inject HA long-lived token</option>
     <option value="http_header">http_header — custom request headers</option>
     <option value="none">none — no authentication</option>
   </select>
+  <label>Name</label>
+  <input id="f-name" type="text" placeholder="ha">
+  <div id="f-url-row">
+  <label>Base URL</label>
+  <input id="f-url" type="url" placeholder="http://homeassistant.local:8123">
+  <div class="hint">URL reachable from within the DashSnap container. Required for ha_token strategy only.</div>
+  </div>
   <div id="f-token-row">
     <label>Token</label>
     <div id="f-token-saved-box" style="display:none">
@@ -571,11 +602,11 @@ function render() {
     row.innerHTML = `
       <div class="trow-info">
         <div class="trow-name">${esc(t.name || '(unnamed)')}</div>
-        <div class="trow-url">${esc(t.base_url || '')}</div>
+        <div class="trow-url">${t.name === 'public' ? 'Capture any public URL without authentication. Use with /record?url=https://...' : (t.base_url ? esc(t.base_url) : '')}</div>
       </div>
       <span class="badge ${badgeClass(strat)}">${esc(strat)}</span>
-      <button class="trow-btn" onclick="openForm(${i})">Edit</button>
-      <button class="trow-btn del" onclick="deleteTarget(${i})">Delete</button>`;
+      ${t.name !== 'public' ? `<button class="trow-btn" onclick="openForm(${i})">Edit</button>
+      <button class="trow-btn del" onclick="deleteTarget(${i})">Delete</button>` : ''}`;
     list.appendChild(row);
   });
 }
@@ -595,6 +626,7 @@ function openForm(idx) {
   document.getElementById('f-token-input-box').style.display = tokenSaved ? 'none' : '';
   document.getElementById('f-token').placeholder = 'eyJ...';
   document.getElementById('f-headers').value = strat === 'http_header' ? JSON.stringify((t.auth && t.auth.headers) || {}) : '';
+  document.getElementById('f-url-row').style.display = strat === 'ha_token' ? '' : 'none';
   document.getElementById('f-token-row').style.display = strat === 'ha_token' ? '' : 'none';
   document.getElementById('f-header-row').style.display = strat === 'http_header' ? '' : 'none';
   document.getElementById('edit-panel').style.display = '';
@@ -615,18 +647,21 @@ function closeForm() {
 
 function onStratChange() {
   const s = document.getElementById('f-strat').value;
+  document.getElementById('f-url-row').style.display = s === 'ha_token' ? '' : 'none';
   document.getElementById('f-token-row').style.display = s === 'ha_token' ? '' : 'none';
   document.getElementById('f-header-row').style.display = s === 'http_header' ? '' : 'none';
 }
 
 function formSave() {
   const name = document.getElementById('f-name').value.trim();
-  const base_url = document.getElementById('f-url').value.trim();
   if (!name) { alert('Name is required'); return false; }
-  if (!base_url) { alert('Base URL is required'); return false; }
   const strat = document.getElementById('f-strat').value;
   const auth = {strategy: strat};
+  const t = {name, auth};
   if (strat === 'ha_token') {
+    const base_url = document.getElementById('f-url').value.trim();
+    if (!base_url) { alert('Base URL is required for ha_token strategy'); return false; }
+    t.base_url = base_url;
     const val = document.getElementById('f-token').value.trim();
     const saved = document.getElementById('f-token').dataset.saved === '1';
     if (val) auth.token = val;
@@ -636,14 +671,13 @@ function formSave() {
     try { auth.headers = JSON.parse(document.getElementById('f-headers').value || '{}'); }
     catch(e) { alert('Invalid JSON in headers: ' + e.message); return false; }
   }
-  const t = {name, base_url, auth};
   if (editIdx !== null) targets[editIdx] = t; else targets.push(t);
   render();
   closeForm();
   return true;
 }
 
-function deleteTarget(i) { targets.splice(i, 1); render(); }
+function deleteTarget(i) { if (targets[i] && targets[i].name === 'public') return; targets.splice(i, 1); render(); }
 
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -674,14 +708,8 @@ async function save() {
   try {
     const r = await fetch('./config');
     const j = await r.json();
-    if (j.targets_json) {
-      try { targets = JSON.parse(j.targets_json); }
-      catch(e) {
-        const msg = document.getElementById('msg');
-        msg.className = 'msg err'; msg.textContent = 'Stored targets_json is invalid: ' + e.message;
-      }
-    } else if (j.base_url) {
-      targets = [{name:'default', base_url:j.base_url, auth:{strategy:'ha_token', token: j.token || ''}}];
+    if (j.targets && j.targets.length) {
+      targets = j.targets;
     }
     render();
     document.querySelector('.save-btn').textContent = j.has_supervisor ? 'Save & Restart' : 'Save';
@@ -711,12 +739,27 @@ async def handle_config_get(request):
             data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         data = {}
+    targets_json = data.get("targets_json", "")
+    if not targets_json and data.get("targets"):
+        targets_json = json.dumps(data["targets"], indent=2)
+    try:
+        tlist = json.loads(targets_json) if targets_json else []
+    except json.JSONDecodeError:
+        tlist = []
+    # Mask tokens in nested targets before returning
+    for t in tlist:
+        auth = t.get("auth", {})
+        if auth.get("token"):
+            auth["token"] = "***"
+        if auth.get("headers"):
+            auth["headers"] = dict.fromkeys(auth["headers"], "***")
+    # Always inject public at top (read-only built-in)
+    tlist = [t for t in tlist if t.get("name") != "public"]
+    tlist.insert(0, {"name": "public", "auth": {"strategy": "none"}})
     return web.json_response(
         {
             "ok": True,
-            "base_url": data.get("base_url", ""),
-            "token": "***" if data.get("token") else "",
-            "targets_json": data.get("targets_json", ""),
+            "targets": tlist,
             "has_supervisor": bool(os.environ.get("SUPERVISOR_TOKEN")),
         }
     )
@@ -735,7 +778,10 @@ async def handle_config_save(request):
         options.pop("token", None)  # *** = unchanged, omit from update
     if options.get("targets_json"):
         try:
-            json.loads(options["targets_json"])
+            tlist = json.loads(options["targets_json"])
+            # Strip built-in public target — it's server-side only, not stored
+            tlist = [t for t in tlist if t.get("name") != "public"]
+            options["targets_json"] = json.dumps(tlist)
         except json.JSONDecodeError as e:
             return web.json_response({"ok": False, "error": f"targets_json: {e}"}, status=400)
 
@@ -756,7 +802,7 @@ async def handle_config_save(request):
         except Exception as e:
             log.error("config save (local) failed: %s", e)
             return web.json_response({"ok": False, "error": str(e)}, status=500)
-        return web.json_response({"ok": True})
+        return web.json_response({"ok": True, "restarting": False})
 
     headers = {"Authorization": f"Bearer {supervisor_token}", "Content-Type": "application/json"}
     try:

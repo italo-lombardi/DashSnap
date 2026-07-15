@@ -96,6 +96,21 @@ class TestParams:
 
         assert record._params({"target": ""})["target_name"] is None
 
+    def test_delay_default_zero(self):
+        import record
+
+        assert record._params({})["delay"] == 0
+
+    def test_delay_custom(self):
+        import record
+
+        assert record._params({"delay": "10"})["delay"] == 10
+
+    def test_delay_capped_at_60(self):
+        import record
+
+        assert record._params({"delay": "999"})["delay"] == 60
+
 
 # ---------------------------------------------------------------------------
 # /record
@@ -146,14 +161,17 @@ class TestHandleRecord:
         with (
             patch.object(record, "TARGETS", {"public": NONE_TARGET}),
             patch.object(record, "DEFAULT_TARGET", "public"),
-            patch.object(record, "record", AsyncMock(return_value="/media/dashsnap/out.png")),
+            patch.object(record, "record", AsyncMock(return_value="/media/DashSnap/out.png")),
         ):
             req = _req(params={"url": "https://example.com", "format": "png"})
             resp = await record.handle_record(req)
             assert resp.status == 200
             data = record.json.loads(resp.body)
             assert data["ok"]
-            assert data["file"] == "/media/dashsnap/out.png"
+            assert data["file"] == "/media/DashSnap/out.png"
+            assert data["url"] == "https://example.com"
+            assert data["format"] == "png"
+            assert data["target"] == "public"
 
     async def test_record_exception_returns_500(self):
         import record
@@ -188,6 +206,19 @@ class TestHandleRecordHa:
             resp = await record.handle_record_ha(req)
             assert resp.status == 400
 
+    async def test_empty_base_url_target_returns_400(self):
+        import record
+
+        no_base = {"name": "public", "base_url": "", "auth": {"strategy": "none"}}
+        with (
+            patch.object(record, "TARGETS", {"public": no_base}),
+            patch.object(record, "DEFAULT_TARGET", "public"),
+        ):
+            req = _req(path="/record/ha", params={"path": "/lovelace/0"})
+            resp = await record.handle_record_ha(req)
+            assert resp.status == 400
+            assert "base_url" in record.json.loads(resp.body)["error"]
+
     async def test_unknown_target_returns_400(self):
         import record
 
@@ -202,7 +233,7 @@ class TestHandleRecordHa:
     async def test_path_prepends_base_url(self):
         import record
 
-        mock_record = AsyncMock(return_value="/media/dashsnap/out.png")
+        mock_record = AsyncMock(return_value="/media/DashSnap/out.png")
         with (
             patch.object(record, "TARGETS", {"ha": HA_TARGET}),
             patch.object(record, "DEFAULT_TARGET", "ha"),
@@ -211,12 +242,18 @@ class TestHandleRecordHa:
             req = _req(path="/record/ha", params={"path": "/lovelace/0", "target": "ha"})
             resp = await record.handle_record_ha(req)
             assert resp.status == 200
+            data = record.json.loads(resp.body)
+            assert data["ok"]
+            assert data["file"] == "/media/DashSnap/out.png"
+            assert data["target"] == "ha"
+            assert data["url"] == "http://homeassistant.local:8123/lovelace/0"
+            assert data["format"] == "webm"
             assert mock_record.call_args[0][0] == "http://homeassistant.local:8123/lovelace/0"
 
     async def test_path_without_leading_slash(self):
         import record
 
-        mock_record = AsyncMock(return_value="/media/dashsnap/out.png")
+        mock_record = AsyncMock(return_value="/media/DashSnap/out.png")
         with (
             patch.object(record, "TARGETS", {"ha": HA_TARGET}),
             patch.object(record, "DEFAULT_TARGET", "ha"),
@@ -288,18 +325,10 @@ class TestHandleTargets:
 
 
 class TestHandleHealth:
-    async def test_no_targets_returns_503(self):
-        import record
-
-        with patch.object(record, "TARGETS", {}):
-            req = _req(path="/health")
-            resp = await record.handle_health(req)
-            assert resp.status == 503
-
     async def test_all_healthy_returns_200(self):
         import record
 
-        healthy = {"name": "ha", "ok": True, "strategy": "ha_token", "base_url": "http://ha:8123"}
+        healthy = {"name": "ha", "ok": True, "strategy": "ha_token", "probed": True}
         with (
             patch.object(record, "TARGETS", {"ha": HA_TARGET}),
             patch.object(record, "_check_target_health", AsyncMock(return_value=healthy)),
@@ -310,14 +339,14 @@ class TestHandleHealth:
             data = record.json.loads(resp.body)
             assert data["ok"]
 
-    async def test_unhealthy_target_returns_502(self):
+    async def test_unhealthy_target_returns_200(self):
         import record
 
         unhealthy = {
             "name": "ha",
             "ok": False,
             "strategy": "ha_token",
-            "base_url": "http://ha:8123",
+            "probed": True,
             "error": "refused",
         }
         with (
@@ -326,9 +355,17 @@ class TestHandleHealth:
         ):
             req = _req(path="/health")
             resp = await record.handle_health(req)
-            assert resp.status == 502
+            assert resp.status == 200
             data = record.json.loads(resp.body)
             assert not data["ok"]
+
+    async def test_no_targets_returns_200(self):
+        import record
+
+        with patch.object(record, "TARGETS", {}):
+            req = _req(path="/health")
+            resp = await record.handle_health(req)
+            assert resp.status == 200
 
 
 # ---------------------------------------------------------------------------
@@ -500,6 +537,15 @@ def _mock_session(status=200, json_data=None, content_type="application/json", e
 
 
 class TestCheckTargetHealth:
+    async def test_empty_base_url_returns_ok(self):
+        import record
+
+        result = await record._check_target_health(
+            {"name": "public", "base_url": "", "auth": {"strategy": "none"}}
+        )
+        assert result["ok"] is True
+        assert result["probed"] is False
+
     async def test_ha_token_healthy(self):
         import record
 
@@ -508,7 +554,8 @@ class TestCheckTargetHealth:
             result = await record._check_target_health(HA_TARGET)
         assert result["ok"] is True
         assert result["strategy"] == "ha_token"
-        assert result["ha"] == "API running."
+        assert result["probed"] is True
+        assert result["detail"] == "API running."
         session.get.assert_called_once()
         session.head.assert_not_called()
 
@@ -519,7 +566,7 @@ class TestCheckTargetHealth:
         with patch("aiohttp.ClientSession", return_value=session):
             result = await record._check_target_health(HA_TARGET)
         assert result["ok"] is False
-        assert result["hint"] == "bad token"
+        assert result["error"] == "bad token"
 
     async def test_ha_token_other_http_error(self):
         import record
@@ -528,7 +575,7 @@ class TestCheckTargetHealth:
         with patch("aiohttp.ClientSession", return_value=session):
             result = await record._check_target_health(HA_TARGET)
         assert result["ok"] is False
-        assert "503" in result["hint"]
+        assert "503" in result["error"]
 
     async def test_none_strategy_healthy(self):
         import record
@@ -537,7 +584,8 @@ class TestCheckTargetHealth:
         with patch("aiohttp.ClientSession", return_value=session):
             result = await record._check_target_health(NONE_TARGET)
         assert result["ok"] is True
-        assert result["http_status"] == 200
+        assert result["probed"] is True
+        assert "200" in result["detail"]
         session.head.assert_called_once()
         session.get.assert_not_called()
 
@@ -558,7 +606,7 @@ class TestCheckTargetHealth:
         with patch("aiohttp.ClientSession", return_value=session):
             result = await record._check_target_health(NONE_TARGET)
         assert result["ok"] is False
-        assert "refused" in result["error"]
+        assert result["error"] == "unreachable"
 
 
 # ---------------------------------------------------------------------------
@@ -590,32 +638,47 @@ class TestHandleConfigGet:
         import record
 
         cfg = tmp_path / "options.json"
-        cfg.write_text(
-            json.dumps({"base_url": "http://ha.local:8123", "token": "tok", "targets_json": ""})
-        )
+        targets = [
+            {
+                "name": "ha",
+                "base_url": "http://ha.local:8123",
+                "auth": {"strategy": "ha_token", "token": "tok"},
+            }
+        ]
+        cfg.write_text(json.dumps({"targets": targets}))
         req = make_mocked_request("GET", "/config")
         with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
         assert data["ok"] is True
-        assert data["base_url"] == "http://ha.local:8123"
-        assert data["token"] == "***"
+        assert "base_url" not in data
+        assert "token" not in data
+        assert "targets_json" not in data
+        assert isinstance(data["targets"], list)
+        ha = next(t for t in data["targets"] if t["name"] == "ha")
+        assert ha["auth"]["token"] == "***"
 
     @pytest.mark.asyncio
-    async def test_empty_token_returns_empty(self, tmp_path):
+    async def test_empty_token_stays_empty(self, tmp_path):
         import json
 
         import record
 
         cfg = tmp_path / "options.json"
-        cfg.write_text(
-            json.dumps({"base_url": "http://ha.local:8123", "token": "", "targets_json": ""})
-        )
+        targets = [
+            {
+                "name": "ha",
+                "base_url": "http://ha.local:8123",
+                "auth": {"strategy": "ha_token", "token": ""},
+            }
+        ]
+        cfg.write_text(json.dumps({"targets": targets}))
         req = make_mocked_request("GET", "/config")
         with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
-        assert data["token"] == ""
+        ha = next(t for t in data["targets"] if t["name"] == "ha")
+        assert ha["auth"]["token"] == ""
 
     @pytest.mark.asyncio
     async def test_missing_file_returns_empty(self, tmp_path):
@@ -628,7 +691,8 @@ class TestHandleConfigGet:
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
         assert data["ok"] is True
-        assert data["base_url"] == ""
+        assert isinstance(data["targets"], list)
+        assert any(t["name"] == "public" for t in data["targets"])
 
     @pytest.mark.asyncio
     async def test_invalid_json_file_returns_empty(self, tmp_path):
@@ -643,7 +707,93 @@ class TestHandleConfigGet:
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
         assert data["ok"] is True
-        assert data["base_url"] == ""
+        assert isinstance(data["targets"], list)
+
+    async def test_targets_array_returned_as_native_list(self, tmp_path):
+        import json
+
+        import record
+
+        targets = [
+            {"name": "ha", "base_url": "http://ha.local:8123", "auth": {"strategy": "ha_token"}}
+        ]
+        cfg = tmp_path / "options.json"
+        cfg.write_text(json.dumps({"targets": targets}))
+        req = make_mocked_request("GET", "/config")
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            resp = await record.handle_config_get(req)
+        data = json.loads(resp.body)
+        assert isinstance(data["targets"], list)
+        names = [t["name"] for t in data["targets"]]
+        assert "ha" in names
+        assert "public" in names
+
+    async def test_public_target_always_first(self, tmp_path):
+        import json
+
+        import record
+
+        cfg = tmp_path / "options.json"
+        cfg.write_text(json.dumps({}))
+        req = make_mocked_request("GET", "/config")
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            resp = await record.handle_config_get(req)
+        data = json.loads(resp.body)
+        assert data["targets"][0]["name"] == "public"
+
+    async def test_token_masked_in_targets(self, tmp_path):
+        import json
+
+        import record
+
+        targets = [
+            {
+                "name": "ha",
+                "base_url": "http://ha.local",
+                "auth": {"strategy": "ha_token", "token": "secret"},
+            }
+        ]
+        cfg = tmp_path / "options.json"
+        cfg.write_text(json.dumps({"targets": targets}))
+        req = make_mocked_request("GET", "/config")
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            resp = await record.handle_config_get(req)
+        data = json.loads(resp.body)
+        ha = next(t for t in data["targets"] if t["name"] == "ha")
+        assert ha["auth"]["token"] == "***"
+
+    async def test_headers_masked_in_targets(self, tmp_path):
+        import json
+
+        import record
+
+        targets = [
+            {
+                "name": "grafana",
+                "auth": {"strategy": "http_header", "headers": {"Authorization": "Bearer secret"}},
+            }
+        ]
+        cfg = tmp_path / "options.json"
+        cfg.write_text(json.dumps({"targets": targets}))
+        req = make_mocked_request("GET", "/config")
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            resp = await record.handle_config_get(req)
+        data = json.loads(resp.body)
+        grafana = next(t for t in data["targets"] if t["name"] == "grafana")
+        assert grafana["auth"]["headers"]["Authorization"] == "***"
+
+    async def test_invalid_targets_json_still_includes_public(self, tmp_path):
+        import json
+
+        import record
+
+        cfg = tmp_path / "options.json"
+        cfg.write_text(json.dumps({"targets_json": "not-valid-json"}))
+        req = make_mocked_request("GET", "/config")
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            resp = await record.handle_config_get(req)
+        data = json.loads(resp.body)
+        assert any(t["name"] == "public" for t in data["targets"])
 
 
 # ---------------------------------------------------------------------------
@@ -653,6 +803,30 @@ class TestHandleConfigGet:
 
 class TestHandleConfigSave:
     @pytest.mark.asyncio
+    async def test_save_strips_public_from_targets_json(self, tmp_path):
+        import json
+
+        import record
+
+        cfg = tmp_path / "options.json"
+        cfg.write_text("{}")
+        targets_with_public = json.dumps(
+            [
+                {"name": "public", "auth": {"strategy": "none"}},
+                {"name": "ha", "base_url": "http://ha.local", "auth": {"strategy": "ha_token"}},
+            ]
+        )
+        req = make_mocked_request("POST", "/config")
+        req.read = AsyncMock(
+            return_value=json.dumps({"targets_json": targets_with_public}).encode()
+        )
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}, clear=True):
+            resp = await record.handle_config_save(req)
+        assert resp.status == 200
+        saved = json.loads(cfg.read_text())
+        saved_targets = json.loads(saved["targets_json"])
+        assert not any(t["name"] == "public" for t in saved_targets)
+
     async def test_no_supervisor_token_writes_file(self, tmp_path):
         import json
 
@@ -669,7 +843,7 @@ class TestHandleConfigSave:
         assert resp.status == 200
         data = json.loads(resp.body)
         assert data["ok"] is True
-        assert "restart_required" not in data
+        assert data["restarting"] is False
         saved = json.loads(cfg.read_text())
         assert saved["base_url"] == "http://ha.local:8123"
 
