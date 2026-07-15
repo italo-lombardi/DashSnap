@@ -507,6 +507,7 @@ function addTarget(t) {
     <input class="t-name" type="text" placeholder="ha" value="${esc(t.name)}">
     <label>Base URL</label>
     <input class="t-url" type="url" placeholder="http://homeassistant.local:8123" value="${esc(t.base_url)}">
+    <div class="hint">URL reachable from within the DashSnap container. Examples: http://homeassistant.local:8123, http://192.168.1.10:8123, or your Nabu Casa URL https://xxxx.ui.nabu.casa.</div>
     <label>Auth strategy</label>
     <select class="t-strat" onchange="onStratChange(this)">
       ${STRATEGIES.map(s => `<option value="${s}"${s===strat?' selected':''}>${s}</option>`).join('')}
@@ -514,6 +515,7 @@ function addTarget(t) {
     <div class="t-token-row" style="display:${strat==='ha_token'?'':'none'}">
       <label>Token</label>
       <input class="t-token" type="password" placeholder="eyJ..." value="${esc(tokenVal)}">
+      <div class="hint">A Home Assistant long-lived access token. Create one in HA → Profile (bottom-left) → Long-lived access tokens → Create token.</div>
     </div>
     <div class="t-header-row" style="display:${strat==='http_header'?'':'none'}">
       <label>Headers (JSON object)</label>
