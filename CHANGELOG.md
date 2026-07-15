@@ -34,7 +34,7 @@ All notable changes to DashSnap.
 
 ---
 
- - 2026-07-14
+## [0.0.3] - 2026-07-14
 
 ### Added
 - Structured logging — startup logs (targets, default, port), request success/error logs via `logging` module. Visible in `ha apps logs c1b14015_dashsnap`.
