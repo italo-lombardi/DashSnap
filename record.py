@@ -558,7 +558,7 @@ function onStratChange(sel) {
   card.querySelector('.t-header-row').style.display = sel.value === 'http_header' ? '' : 'none';
 }
 
-function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function buildPayload() {
   if (mode === 'single') {
@@ -608,12 +608,20 @@ async function save() {
     const j = await r.json();
     if (j.targets_json) {
       setMode('multi');
-      JSON.parse(j.targets_json).forEach(addTarget);
+      try {
+        JSON.parse(j.targets_json).forEach(addTarget);
+      } catch(e) {
+        const msg = document.getElementById('msg');
+        msg.className = 'msg err'; msg.textContent = 'Stored targets_json is invalid: ' + e.message;
+      }
     } else {
       document.getElementById('s-url').value = j.base_url || '';
       document.getElementById('s-token').value = j.token || '';
     }
-  } catch {}
+  } catch(e) {
+    const msg = document.getElementById('msg');
+    msg.className = 'msg err'; msg.textContent = 'Failed to load config: ' + e.message;
+  }
 })();
 </script>
 </body>
@@ -639,7 +647,7 @@ async def handle_config_get(request):
         {
             "ok": True,
             "base_url": data.get("base_url", ""),
-            "token": data.get("token", ""),
+            "token": "***" if data.get("token") else "",
             "targets_json": data.get("targets_json", ""),
         }
     )
@@ -663,6 +671,13 @@ async def handle_config_save(request):
 
     allowed = {"base_url", "token", "targets_json"}
     options = {k: v for k, v in body.items() if k in allowed}
+    if not options.get("token") or options["token"] == "***":
+        options.pop("token", None)
+    if options.get("targets_json"):
+        try:
+            json.loads(options["targets_json"])
+        except json.JSONDecodeError as e:
+            return web.json_response({"ok": False, "error": f"targets_json: {e}"}, status=400)
 
     headers = {"Authorization": f"Bearer {supervisor_token}", "Content-Type": "application/json"}
     try:
@@ -711,7 +726,8 @@ app.router.add_get("/ha/dashboards", handle_ha_dashboards)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    log.info("DashSnap starting on port 8099")
+    port = int(os.environ.get("INGRESS_PORT", 8099))
+    log.info("DashSnap starting on port %d", port)
     log.info("Configured targets: %s", list(TARGETS.keys()) if TARGETS else "none")
     log.info("Default target: %s", DEFAULT_TARGET)
-    web.run_app(app, host="0.0.0.0", port=8099, access_log=logging.getLogger("aiohttp.access"))
+    web.run_app(app, host="0.0.0.0", port=port, access_log=logging.getLogger("aiohttp.access"))

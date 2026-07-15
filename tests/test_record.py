@@ -570,7 +570,23 @@ class TestHandleConfigGet:
         data = json.loads(resp.body)
         assert data["ok"] is True
         assert data["base_url"] == "http://ha.local:8123"
-        assert data["token"] == "tok"
+        assert data["token"] == "***"
+
+    @pytest.mark.asyncio
+    async def test_empty_token_returns_empty(self, tmp_path):
+        import json
+
+        import record
+
+        cfg = tmp_path / "options.json"
+        cfg.write_text(
+            json.dumps({"base_url": "http://ha.local:8123", "token": "", "targets_json": ""})
+        )
+        req = make_mocked_request("GET", "/config")
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            resp = await record.handle_config_get(req)
+        data = json.loads(resp.body)
+        assert data["token"] == ""
 
     @pytest.mark.asyncio
     async def test_missing_file_returns_empty(self, tmp_path):
@@ -599,7 +615,9 @@ class TestHandleConfigSave:
         import record
 
         req = make_mocked_request("POST", "/config")
-        req.read = AsyncMock(return_value=b'{"base_url":"http://ha.local:8123","token":"t","targets_json":""}')
+        req.read = AsyncMock(
+            return_value=b'{"base_url":"http://ha.local:8123","token":"t","targets_json":""}'
+        )
         with patch.dict("os.environ", {}, clear=True):
             resp = await record.handle_config_save(req)
         assert resp.status == 503
@@ -619,6 +637,66 @@ class TestHandleConfigSave:
         assert resp.status == 400
         data = json.loads(resp.body)
         assert data["ok"] is False
+
+    @pytest.mark.asyncio
+    async def test_invalid_targets_json_returns_400(self):
+        import json
+
+        import record
+
+        req = make_mocked_request("POST", "/config")
+        req.read = AsyncMock(
+            return_value=b'{"base_url":"","token":"","targets_json":"not-valid-json"}'
+        )
+        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok"}):
+            resp = await record.handle_config_save(req)
+        assert resp.status == 400
+        data = json.loads(resp.body)
+        assert data["ok"] is False
+        assert "targets_json" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_masked_token_not_forwarded(self):
+        import json
+
+        import record
+
+        req = make_mocked_request("POST", "/config")
+        req.read = AsyncMock(
+            return_value=b'{"base_url":"http://ha.local:8123","token":"***","targets_json":""}'
+        )
+        captured = {}
+        ok_resp = AsyncMock()
+        ok_resp.status = 200
+        ok_resp.__aenter__ = AsyncMock(return_value=ok_resp)
+        ok_resp.__aexit__ = AsyncMock(return_value=False)
+
+        import aiohttp
+
+        drop_cm = AsyncMock()
+        drop_cm.__aenter__ = AsyncMock(side_effect=aiohttp.ClientConnectionError("dropped"))
+        drop_cm.__aexit__ = AsyncMock(return_value=False)
+
+        call_count = 0
+
+        def _post(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                captured.update(kwargs.get("json", {}))
+                return ok_resp
+            return drop_cm
+
+        session = AsyncMock()
+        session.post = _post
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok"}):
+            with patch("aiohttp.ClientSession", return_value=session):
+                resp = await record.handle_config_save(req)
+        data = json.loads(resp.body)
+        assert data["ok"] is True
+        assert "token" not in captured.get("options", {})
 
     @pytest.mark.asyncio
     async def test_supervisor_error_returns_502(self):
