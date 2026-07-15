@@ -501,8 +501,6 @@ _CONFIG_UI = """<!DOCTYPE html>
   .footer-left{font-size:.73rem;color:var(--muted);line-height:1.6}
   .footer-left a{color:var(--ha);text-decoration:none}
   .footer-left a:hover{text-decoration:underline}
-  .legend{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-  .legend-title{font-size:.68rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.08em}
 </style>
 </head>
 <body>
@@ -556,14 +554,10 @@ _CONFIG_UI = """<!DOCTYPE html>
 
 <footer>
   <div class="footer-left">
-    <a href="https://github.com/italo-lombardi/DashSnap" target="_blank" rel="noopener">italo-lombardi/DashSnap</a>
+    <a href="https://github.com/italo-lombardi/DashSnap" target="_blank" rel="noopener">DashSnap — Screenshot &amp; record any web page via headless Chromium</a>
     &nbsp;·&nbsp; Changes take effect after restart
-  </div>
-  <div class="legend">
-    <span class="legend-title">Auth:</span>
-    <span class="badge b-ha">ha_token</span>
-    <span class="badge b-hdr">http_header</span>
-    <span class="badge b-none">none</span>
+    &nbsp;·&nbsp; by <a href="https://www.linkedin.com/in/italolombardi/" target="_blank" rel="noopener">Italo Lombardi</a>
+    &nbsp;·&nbsp; <a href="https://github.com/italo-lombardi" target="_blank" rel="noopener">more projects</a>
   </div>
 </footer>
 
