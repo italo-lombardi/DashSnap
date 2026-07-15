@@ -8,8 +8,8 @@
 #   By default recordings go to ./recordings/ next to this file.
 #   Change the left side of the volume mount to any folder you want:
 #
-#     - ~/Downloads:/media/dashsnap        # save to Downloads
-#     - /mnt/nas/dashsnap:/media/dashsnap  # save to NAS
+#     - ~/Downloads:/media/DashSnap        # save to Downloads
+#     - /mnt/nas/DashSnap:/media/DashSnap  # save to NAS
 #
 services:
   dashsnap:
@@ -19,7 +19,7 @@ services:
       - "8099:8099"
     volumes:
       - ./options.json:/data/options.json:ro
-      - ./recordings:/media/dashsnap   # ← change left side to redirect output
+      - ./recordings:/media/DashSnap   # ← change left side to redirect output
     # host.docker.internal lets DashSnap reach a service running on the Docker host.
     extra_hosts:
       - "host.docker.internal:host-gateway"

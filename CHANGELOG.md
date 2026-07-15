@@ -2,6 +2,28 @@
 
 All notable changes to DashSnap.
 
+## [0.0.5] - 2026-07-15
+
+### Added
+- **Default `public` target** — when no targets are configured DashSnap now automatically uses a built-in `public` target (`strategy: none`, no base URL). `GET /record?url=https://...` works with zero configuration.
+- `GET /record/ha` returns a clear `400` error when the selected target has no `base_url` (e.g. the `public` target), rather than producing a malformed URL.
+
+### Changed
+- **Output folder renamed `/media/dashsnap` → `/media/DashSnap`** ⚠️ breaking for existing Docker volume mounts.
+
+  **Migration:** update your volume mount:
+  ```yaml
+  # docker-compose.yml — change this line
+  - ./recordings:/media/DashSnap   # was: /media/dashsnap
+  ```
+  Or set `OUT_DIR` to keep the old path: `-e OUT_DIR=/media/dashsnap`.
+
+- `GET /config` now returns the `targets` array serialised as `targets_json` when `targets_json` is empty — fixes blank ingress UI after saving config via the HA Add-on config tab.
+- Removed redundant `mkdir -p /media/DashSnap` from Dockerfile (runtime `OUT_DIR.mkdir()` handles it).
+
+### Fixed
+- Path traversal hardened: output file paths now resolved via `os.path.realpath` + `os.path.commonpath` containment check (closes CodeQL `py/path-injection` alerts).
+
 ## [0.0.4] - 2026-07-15
 
 ### Added
