@@ -449,113 +449,215 @@ _CONFIG_UI = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DashSnap — Configure</title>
 <style>
-  :root { --ha: #03a9f4; --bg: #1c1c1c; --card: #2a2a2a; --border: #3a3a3a; --text: #e0e0e0; --muted: #888; --err: #f44336; --ok: #4caf50; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
-  h1 { font-size: 1.3rem; font-weight: 600; color: var(--ha); margin-bottom: 20px; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
-  label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 4px; margin-top: 12px; }
-  label:first-child { margin-top: 0; }
-  input, select, textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; font-size: .9rem; font-family: inherit; }
-  textarea { font-family: monospace; resize: vertical; min-height: 80px; }
-  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ha); }
-  .target-card { border: 1px solid var(--border); border-radius: 6px; padding: 14px; margin-bottom: 10px; position: relative; }
-  .target-card h3 { font-size: .85rem; color: var(--muted); margin-bottom: 10px; }
-  .remove-btn { position: absolute; top: 10px; right: 10px; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.1rem; padding: 0 4px; }
-  .remove-btn:hover { color: var(--err); }
-  .add-btn { width: 100%; padding: 8px; border: 1px dashed var(--border); border-radius: 4px; background: none; color: var(--muted); cursor: pointer; font-size: .85rem; margin-top: 4px; }
-  .add-btn:hover { border-color: var(--ha); color: var(--ha); }
-  .save-btn { width: 100%; padding: 10px; background: var(--ha); color: #fff; border: none; border-radius: 4px; font-size: .95rem; cursor: pointer; margin-top: 8px; font-weight: 600; }
-  .save-btn:hover { opacity: .9; }
-  .save-btn:disabled { opacity: .5; cursor: default; }
-  .msg { padding: 10px 14px; border-radius: 4px; margin-top: 12px; font-size: .85rem; display: none; }
-  .msg.ok { background: rgba(76,175,80,.15); border: 1px solid var(--ok); color: var(--ok); display: block; }
-  .msg.err { background: rgba(244,67,54,.15); border: 1px solid var(--err); color: var(--err); display: block; }
-  .hint { font-size: .75rem; color: var(--muted); margin-top: 4px; }
-  .header-row { display: flex; gap: 8px; }
-  .header-row input:first-child { flex: 1; }
-  .header-row input:last-child { flex: 2; }
+  :root{--ha:#03a9f4;--bg:#0d1117;--card:#161b22;--border:#21262d;--text:#e6edf3;--muted:#6e7681;--err:#f85149;--ok:#3fb950;--ha-dim:rgba(3,169,244,.1);--radius:8px}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:28px 24px 56px;max-width:640px}
+  h1{font-size:1.2rem;font-weight:700;color:var(--ha);margin-bottom:2px;display:flex;align-items:center;gap:8px}
+  .subtitle{font-size:.78rem;color:var(--muted);margin-bottom:28px}
+  .section-label{font-size:.68rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+  /* target row */
+  .trow{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:13px 16px;margin-bottom:7px;transition:border-color .15s,box-shadow .15s}
+  .trow:hover{border-color:#30363d;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+  .trow-info{flex:1;min-width:0}
+  .trow-name{font-weight:600;font-size:.88rem;margin-bottom:2px}
+  .trow-url{font-size:.73rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .badge{font-size:.65rem;font-weight:700;border-radius:4px;padding:3px 7px;white-space:nowrap;letter-spacing:.02em}
+  .b-ha  {background:rgba(3,169,244,.12);color:#38bdf8;border:1px solid rgba(3,169,244,.2)}
+  .b-hdr {background:rgba(168,85,247,.12);color:#c084fc;border:1px solid rgba(168,85,247,.2)}
+  .b-none{background:rgba(110,118,129,.12);color:#8b949e;border:1px solid rgba(110,118,129,.2)}
+  .trow-btn{background:none;border:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:.73rem;padding:5px 12px;border-radius:5px;transition:.15s;font-weight:500}
+  .trow-btn:hover{border-color:var(--ha);color:var(--ha);background:var(--ha-dim)}
+  .trow-btn.del:hover{border-color:var(--err);color:var(--err);background:rgba(248,81,73,.08)}
+  /* form panel */
+  .edit-panel{background:var(--card);border:1px solid var(--ha);border-radius:var(--radius);padding:22px;margin-bottom:16px;box-shadow:0 0 0 3px rgba(3,169,244,.06),0 8px 32px rgba(0,0,0,.4)}
+  .panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .panel-header h2{font-size:.95rem;font-weight:700;color:var(--ha)}
+  .panel-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.1rem;line-height:1;padding:0 2px}
+  .panel-close:hover{color:var(--text)}
+  label{display:block;font-size:.73rem;font-weight:600;color:var(--muted);margin-bottom:5px;margin-top:14px;letter-spacing:.02em}
+  label:first-of-type{margin-top:0}
+  .label-row{display:flex;align-items:center;gap:6px;margin-top:14px;margin-bottom:5px}
+  .label-row label{margin:0}
+  input,select,textarea{width:100%;background:#010409;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:9px 12px;font-size:.875rem;font-family:inherit;transition:border-color .15s,box-shadow .15s}
+  textarea{font-family:'SF Mono','Fira Code',monospace;resize:vertical;min-height:68px}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ha);box-shadow:0 0 0 3px rgba(3,169,244,.12)}
+  select{cursor:pointer}
+  .hint{font-size:.71rem;color:var(--muted);margin-top:5px;line-height:1.5}
+  .badge-saved{font-size:.65rem;font-weight:700;background:rgba(63,185,80,.12);color:var(--ok);border:1px solid rgba(63,185,80,.2);border-radius:4px;padding:2px 7px}
+  .form-actions{display:flex;gap:8px;margin-top:20px}
+  .btn-primary{flex:1;padding:10px;background:var(--ha);color:#fff;border:none;border-radius:6px;font-size:.875rem;font-weight:700;cursor:pointer;transition:opacity .15s;letter-spacing:.01em}
+  .btn-primary:hover{opacity:.85}
+  .btn-cancel{padding:10px 18px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;font-size:.875rem;cursor:pointer;transition:.15s;font-weight:500}
+  .btn-cancel:hover{border-color:#30363d;color:var(--text)}
+  .add-btn{width:100%;padding:10px;border:1px dashed var(--border);border-radius:var(--radius);background:none;color:var(--muted);cursor:pointer;font-size:.83rem;margin-bottom:20px;transition:.15s;font-weight:500}
+  .add-btn:hover{border-color:var(--ha);color:var(--ha);background:var(--ha-dim)}
+  .save-btn{width:100%;padding:12px;background:var(--ha);color:#fff;border:none;border-radius:var(--radius);font-size:.95rem;font-weight:700;cursor:pointer;transition:opacity .15s;letter-spacing:.02em}
+  .save-btn:hover{opacity:.85}
+  .save-btn:disabled{opacity:.4;cursor:default}
+  .msg{padding:11px 15px;border-radius:6px;margin-top:12px;font-size:.82rem;display:none;line-height:1.5}
+  .msg.ok {background:rgba(63,185,80,.1) ;border:1px solid rgba(63,185,80,.25) ;color:var(--ok) ;display:block}
+  .msg.err{background:rgba(248,81,73,.1) ;border:1px solid rgba(248,81,73,.25) ;color:var(--err);display:block}
+  footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+  .footer-left{font-size:.73rem;color:var(--muted);line-height:1.6}
+  .footer-left a{color:var(--ha);text-decoration:none}
+  .footer-left a:hover{text-decoration:underline}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .legend-title{font-size:.68rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.08em}
 </style>
 </head>
 <body>
-<h1>DashSnap — Configure</h1>
+<h1>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+  DashSnap
+</h1>
+<div class="subtitle">Screenshot &amp; record any web page — configure targets below</div>
 
-<div class="card">
-  <div id="targets-list"></div>
-  <button class="add-btn" onclick="addTarget()">+ Add target</button>
+<div class="section-label">Targets</div>
+<div id="targets-list"></div>
+<button class="add-btn" onclick="openForm(null)">+ Add target</button>
 
-  <button class="save-btn" onclick="save()">Save &amp; Restart</button>
-  <div class="msg" id="msg"></div>
+<div class="edit-panel" id="edit-panel" style="display:none">
+  <div class="panel-header">
+    <h2 id="form-title">New target</h2>
+    <button class="panel-close" onclick="closeForm()" title="Cancel">✕</button>
+  </div>
+  <label>Name</label>
+  <input id="f-name" type="text" placeholder="ha">
+  <label>Base URL</label>
+  <input id="f-url" type="url" placeholder="http://homeassistant.local:8123">
+  <div class="hint">URL reachable from within the DashSnap container. Examples: http://homeassistant.local:8123, http://192.168.1.10:8123, or your Nabu Casa URL https://xxxx.ui.nabu.casa.</div>
+  <label>Auth strategy</label>
+  <select id="f-strat" onchange="onStratChange()">
+    <option value="ha_token">ha_token — inject HA long-lived token</option>
+    <option value="http_header">http_header — custom request headers</option>
+    <option value="none">none — no authentication</option>
+  </select>
+  <div id="f-token-row">
+    <div class="label-row">
+      <label>Token</label>
+      <span id="f-token-saved" class="badge-saved" style="display:none">saved</span>
+    </div>
+    <input id="f-token" type="password" placeholder="eyJ...">
+    <div class="hint">A Home Assistant long-lived access token. Create one in HA → Profile (bottom-left) → Long-lived access tokens → Create token. Leave blank to keep existing token.</div>
+  </div>
+  <div id="f-header-row" style="display:none">
+    <label>Headers (JSON object)</label>
+    <textarea id="f-headers" rows="2" placeholder='{"Authorization":"Bearer glsa_xxx"}'></textarea>
+    <div class="hint">JSON object of HTTP headers to send with every request to this target.</div>
+  </div>
+  <div class="form-actions">
+    <button class="btn-primary" onclick="formSave()">Save target</button>
+    <button class="btn-cancel" onclick="closeForm()">Cancel</button>
+  </div>
 </div>
 
+<button class="save-btn" onclick="save()">Save &amp; Restart</button>
+<div class="msg" id="msg"></div>
+
+<footer>
+  <div class="footer-left">
+    <a href="https://github.com/italo-lombardi/DashSnap" target="_blank" rel="noopener">italo-lombardi/DashSnap</a>
+    &nbsp;·&nbsp; Changes take effect after restart
+  </div>
+  <div class="legend">
+    <span class="legend-title">Auth:</span>
+    <span class="badge b-ha">ha_token</span>
+    <span class="badge b-hdr">http_header</span>
+    <span class="badge b-none">none</span>
+  </div>
+</footer>
+
 <script>
-const STRATEGIES = ['ha_token','http_header','none'];
+let targets = [];
+let editIdx = null;
 
-function addTarget(t) {
-  t = t || {name:'', base_url:'', auth:{strategy:'ha_token', token:'', headers:{}}};
-  const strat = t.auth.strategy || 'ha_token';
-  const headerVal = strat === 'http_header' ? JSON.stringify(t.auth.headers || {}) : '';
-  const tokenVal = t.auth.token || '';
-  const id = 'tgt-' + Date.now() + Math.random().toString(36).slice(2);
-  const div = document.createElement('div');
-  div.className = 'target-card';
-  div.id = id;
-  div.innerHTML = `
-    <h3>Target</h3>
-    <button class="remove-btn" onclick="document.getElementById('${id}').remove()">✕</button>
-    <label>Name</label>
-    <input class="t-name" type="text" placeholder="ha" value="${esc(t.name)}">
-    <label>Base URL</label>
-    <input class="t-url" type="url" placeholder="http://homeassistant.local:8123" value="${esc(t.base_url)}">
-    <div class="hint">URL reachable from within the DashSnap container. Examples: http://homeassistant.local:8123, http://192.168.1.10:8123, or your Nabu Casa URL https://xxxx.ui.nabu.casa.</div>
-    <label>Auth strategy</label>
-    <select class="t-strat" onchange="onStratChange(this)">
-      ${STRATEGIES.map(s => `<option value="${s}"${s===strat?' selected':''}>${s}</option>`).join('')}
-    </select>
-    <div class="t-token-row" style="display:${strat==='ha_token'?'':'none'}">
-      <label>Token</label>
-      <input class="t-token" type="password" placeholder="eyJ..." value="${esc(tokenVal)}">
-      <div class="hint">A Home Assistant long-lived access token. Create one in HA → Profile (bottom-left) → Long-lived access tokens → Create token.</div>
-    </div>
-    <div class="t-header-row" style="display:${strat==='http_header'?'':'none'}">
-      <label>Headers (JSON object)</label>
-      <textarea class="t-headers" rows="2" placeholder='{"Authorization":"Bearer glsa_xxx"}'>${esc(headerVal)}</textarea>
-    </div>`;
-  document.getElementById('targets-list').appendChild(div);
-}
+function badgeClass(s) { return s==='ha_token'?'b-ha':s==='http_header'?'b-hdr':'b-none'; }
 
-function onStratChange(sel) {
-  const card = sel.closest('.target-card');
-  card.querySelector('.t-token-row').style.display = sel.value === 'ha_token' ? '' : 'none';
-  card.querySelector('.t-header-row').style.display = sel.value === 'http_header' ? '' : 'none';
-}
-
-function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-function buildPayload() {
-  const cards = document.querySelectorAll('#targets-list .target-card');
-  const targets = [];
-  for (const c of cards) {
-    const strat = c.querySelector('.t-strat').value;
-    const auth = {strategy: strat};
-    if (strat === 'ha_token') auth.token = c.querySelector('.t-token').value.trim();
-    if (strat === 'http_header') {
-      try { auth.headers = JSON.parse(c.querySelector('.t-headers').value || '{}'); }
-      catch { throw new Error('Invalid JSON in headers for target "' + c.querySelector('.t-name').value + '"'); }
-    }
-    targets.push({name: c.querySelector('.t-name').value.trim(), base_url: c.querySelector('.t-url').value.trim(), auth});
+function render() {
+  const list = document.getElementById('targets-list');
+  list.innerHTML = '';
+  if (!targets.length) {
+    list.innerHTML = '<div style="text-align:center;padding:24px;color:var(--muted);font-size:.83rem;border:1px dashed var(--border);border-radius:var(--radius);margin-bottom:8px">No targets configured — add one below</div>';
+    return;
   }
-  return {base_url: '', token: '', targets_json: JSON.stringify(targets)};
+  targets.forEach((t, i) => {
+    const row = document.createElement('div');
+    row.className = 'trow';
+    const strat = t.auth ? t.auth.strategy || 'none' : 'none';
+    row.innerHTML = `
+      <div class="trow-info">
+        <div class="trow-name">${esc(t.name || '(unnamed)')}</div>
+        <div class="trow-url">${esc(t.base_url || '')}</div>
+      </div>
+      <span class="badge ${badgeClass(strat)}">${esc(strat)}</span>
+      <button class="trow-btn" onclick="openForm(${i})">Edit</button>
+      <button class="trow-btn del" onclick="deleteTarget(${i})">Delete</button>`;
+    list.appendChild(row);
+  });
 }
+
+function openForm(idx) {
+  editIdx = idx;
+  const t = idx !== null ? targets[idx] : {name:'', base_url:'', auth:{strategy:'ha_token', token:'', headers:{}}};
+  const strat = (t.auth && t.auth.strategy) || 'ha_token';
+  document.getElementById('form-title').textContent = idx !== null ? 'Edit target' : 'New target';
+  document.getElementById('f-name').value = t.name || '';
+  document.getElementById('f-url').value = t.base_url || '';
+  document.getElementById('f-strat').value = strat;
+  const tokenSaved = t.auth && t.auth.token === '***';
+  document.getElementById('f-token').value = '';
+  document.getElementById('f-token').placeholder = tokenSaved ? '(leave blank to keep existing token)' : 'eyJ...';
+  document.getElementById('f-token').dataset.saved = tokenSaved ? '1' : '';
+  document.getElementById('f-token-saved').style.display = tokenSaved ? '' : 'none';
+  document.getElementById('f-headers').value = strat === 'http_header' ? JSON.stringify((t.auth && t.auth.headers) || {}) : '';
+  document.getElementById('f-token-row').style.display = strat === 'ha_token' ? '' : 'none';
+  document.getElementById('f-header-row').style.display = strat === 'http_header' ? '' : 'none';
+  document.getElementById('edit-panel').style.display = '';
+  document.getElementById('f-name').focus();
+}
+
+function closeForm() {
+  document.getElementById('edit-panel').style.display = 'none';
+  editIdx = null;
+}
+
+function onStratChange() {
+  const s = document.getElementById('f-strat').value;
+  document.getElementById('f-token-row').style.display = s === 'ha_token' ? '' : 'none';
+  document.getElementById('f-header-row').style.display = s === 'http_header' ? '' : 'none';
+}
+
+function formSave() {
+  const strat = document.getElementById('f-strat').value;
+  const auth = {strategy: strat};
+  if (strat === 'ha_token') {
+    const val = document.getElementById('f-token').value.trim();
+    const saved = document.getElementById('f-token').dataset.saved === '1';
+    if (val) auth.token = val;
+    else if (saved) auth.token = '***';
+  }
+  if (strat === 'http_header') {
+    try { auth.headers = JSON.parse(document.getElementById('f-headers').value || '{}'); }
+    catch(e) { alert('Invalid JSON in headers: ' + e.message); return; }
+  }
+  const t = {name: document.getElementById('f-name').value.trim(), base_url: document.getElementById('f-url').value.trim(), auth};
+  if (editIdx !== null) targets[editIdx] = t; else targets.push(t);
+  render();
+  closeForm();
+}
+
+function deleteTarget(i) { targets.splice(i, 1); render(); }
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 async function save() {
   const btn = document.querySelector('.save-btn');
   const msg = document.getElementById('msg');
   msg.className = 'msg'; msg.textContent = '';
   try {
-    const payload = buildPayload();
+    const payload = {base_url:'', token:'', targets_json: JSON.stringify(targets)};
     btn.disabled = true; btn.textContent = 'Saving…';
-    const r = await fetch('config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const r = await fetch('config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'save failed');
     msg.className = 'msg ok'; msg.textContent = 'Saved. Restarting addon…';
@@ -566,21 +668,20 @@ async function save() {
   }
 }
 
-// Load current config on page load
 (async () => {
   try {
     const r = await fetch('config');
     const j = await r.json();
     if (j.targets_json) {
-      try {
-        JSON.parse(j.targets_json).forEach(addTarget);
-      } catch(e) {
+      try { targets = JSON.parse(j.targets_json); }
+      catch(e) {
         const msg = document.getElementById('msg');
         msg.className = 'msg err'; msg.textContent = 'Stored targets_json is invalid: ' + e.message;
       }
     } else if (j.base_url) {
-      addTarget({name:'default', base_url: j.base_url, auth:{strategy:'ha_token', token: j.token === '***' ? '' : (j.token || ''), headers:{}}});
+      targets = [{name:'default', base_url:j.base_url, auth:{strategy:'ha_token', token: j.token || ''}}];
     }
+    render();
   } catch(e) {
     const msg = document.getElementById('msg');
     msg.className = 'msg err'; msg.textContent = 'Failed to load config: ' + e.message;
