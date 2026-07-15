@@ -175,11 +175,9 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
     is_png = fmt == "png"
 
     def _safe(p: pathlib.Path) -> pathlib.Path:
-        resolved = p.resolve()
-        try:
-            resolved.relative_to(safe_root)
-        except ValueError as exc:
-            raise RuntimeError(f"path escapes OUT_DIR: {resolved}") from exc
+        resolved = pathlib.Path(os.path.realpath(p))
+        if not str(resolved).startswith(str(safe_root) + os.sep):
+            raise RuntimeError(f"path escapes OUT_DIR: {resolved}")
         return resolved
 
     tmp_dir = _safe(OUT_DIR / f".tmp_{stamp}_{slug}")

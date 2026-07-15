@@ -22,7 +22,7 @@ All notable changes to DashSnap.
 - **Recording filenames simplified** — output files are now named by capture timestamp only (`20260715_201234.png` / `20260715_201234.webm`), removing the URL-derived prefix. Cleaner filenames, no user-controlled data in paths.
 
 ### Fixed
-- Path traversal hardened: output file paths validated via `Path.resolve().relative_to(OUT_DIR)` — raises `RuntimeError` if path escapes the output directory (closes CodeQL `py/path-injection` alerts).
+- Path traversal hardened: output file paths validated via `os.path.realpath` + `startswith(safe_root)` as recommended by CodeQL — raises `RuntimeError` if path escapes the output directory.
 
 ## [0.0.4] - 2026-07-15
 
