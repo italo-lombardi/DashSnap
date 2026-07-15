@@ -593,11 +593,12 @@ function render() {
     row.innerHTML = `
       <div class="trow-info">
         <div class="trow-name">${esc(t.name || '(unnamed)')}</div>
-        <div class="trow-url">${t.base_url ? esc(t.base_url) : ''}</div>
+        <div class="trow-url">${t.name === 'public' ? 'Capture any public URL without authentication. Use with /record?url=https://...' : (t.base_url ? esc(t.base_url) : '')}</div>
       </div>
       <span class="badge ${badgeClass(strat)}">${esc(strat)}</span>
-      <button class="trow-btn" onclick="openForm(${i})">Edit</button>
-      <button class="trow-btn del" onclick="deleteTarget(${i})">Delete</button>`;
+      ${t.name !== 'public' ? `<button class="trow-btn" onclick="openForm(${i})">Edit</button>
+      <button class="trow-btn del" onclick="deleteTarget(${i})">Delete</button>` : ''}`;
+    list.appendChild(row);
     list.appendChild(row);
   });
 }
@@ -668,7 +669,7 @@ function formSave() {
   return true;
 }
 
-function deleteTarget(i) { targets.splice(i, 1); render(); }
+function deleteTarget(i) { if (targets[i] && targets[i].name === 'public') return; targets.splice(i, 1); render(); }
 
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -739,6 +740,14 @@ async def handle_config_get(request):
     targets_json = data.get("targets_json", "")
     if not targets_json and data.get("targets"):
         targets_json = json.dumps(data["targets"], indent=2)
+    # Always include the built-in public target at the top
+    try:
+        tlist = json.loads(targets_json) if targets_json else []
+    except json.JSONDecodeError:
+        tlist = []
+    tlist = [t for t in tlist if t.get("name") != "public"]
+    tlist.insert(0, {"name": "public", "auth": {"strategy": "none"}})
+    targets_json = json.dumps(tlist, indent=2)
     return web.json_response(
         {
             "ok": True,

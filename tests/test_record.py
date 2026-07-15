@@ -680,7 +680,38 @@ class TestHandleConfigGet:
         with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
-        assert data["targets_json"] == json.dumps(targets, indent=2)
+        parsed = json.loads(data["targets_json"])
+        names = [t["name"] for t in parsed]
+        assert "ha" in names
+        assert "public" in names
+
+    async def test_public_target_always_included(self, tmp_path):
+        import json
+
+        import record
+
+        cfg = tmp_path / "options.json"
+        cfg.write_text(json.dumps({}))
+        req = make_mocked_request("GET", "/config")
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            resp = await record.handle_config_get(req)
+        data = json.loads(resp.body)
+        parsed = json.loads(data["targets_json"])
+        assert any(t["name"] == "public" for t in parsed)
+
+    async def test_invalid_targets_json_still_includes_public(self, tmp_path):
+        import json
+
+        import record
+
+        cfg = tmp_path / "options.json"
+        cfg.write_text(json.dumps({"targets_json": "not-valid-json"}))
+        req = make_mocked_request("GET", "/config")
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            resp = await record.handle_config_get(req)
+        data = json.loads(resp.body)
+        parsed = json.loads(data["targets_json"])
+        assert any(t["name"] == "public" for t in parsed)
 
 
 # ---------------------------------------------------------------------------
