@@ -170,9 +170,8 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     _path = urlparse(url).path.strip("/") or urlparse(url).netloc
     _slug_raw = re.sub(r"[^a-zA-Z0-9]+", "_", _path)[:40].strip("_") or "page"
-    if not re.fullmatch(r"[a-zA-Z0-9_]{1,40}", _slug_raw):
-        _slug_raw = "page"
-    slug = _slug_raw  # taint ends: fullmatch guarantees [a-zA-Z0-9_] only
+    _m = re.fullmatch(r"[a-zA-Z0-9_]{1,40}", _slug_raw)
+    slug = _m.group(0) if _m else "page"  # taint ends: only fullmatch group used
     is_png = fmt == "png"
 
     def _safe(p: pathlib.Path) -> pathlib.Path:
