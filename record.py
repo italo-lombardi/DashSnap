@@ -484,6 +484,9 @@ _CONFIG_UI = """<!DOCTYPE html>
   select{cursor:pointer}
   .hint{font-size:.71rem;color:var(--muted);margin-top:5px;line-height:1.5}
   .badge-saved{font-size:.65rem;font-weight:700;background:rgba(63,185,80,.12);color:var(--ok);border:1px solid rgba(63,185,80,.2);border-radius:4px;padding:2px 7px}
+  .token-saved-state{display:flex;align-items:center;justify-content:space-between;background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.2);border-radius:6px;padding:10px 14px;color:var(--ok);font-size:.875rem;font-weight:600}
+  .replace-btn{background:none;border:1px solid rgba(63,185,80,.3);color:var(--ok);border-radius:5px;padding:4px 12px;font-size:.75rem;cursor:pointer;font-weight:600;transition:.15s}
+  .replace-btn:hover{background:rgba(63,185,80,.12)}
   .form-actions{display:flex;gap:8px;margin-top:20px}
   .btn-primary{flex:1;padding:10px;background:var(--ha);color:#fff;border:none;border-radius:6px;font-size:.875rem;font-weight:700;cursor:pointer;transition:opacity .15s;letter-spacing:.01em}
   .btn-primary:hover{opacity:.85}
@@ -531,12 +534,18 @@ _CONFIG_UI = """<!DOCTYPE html>
     <option value="none">none — no authentication</option>
   </select>
   <div id="f-token-row">
-    <div class="label-row">
-      <label>Token</label>
-      <span id="f-token-saved" class="badge-saved" style="display:none">saved</span>
+    <label>Token</label>
+    <div id="f-token-saved-box" style="display:none">
+      <div class="token-saved-state">
+        <span>&#128274; Token saved</span>
+        <button type="button" class="replace-btn" onclick="showTokenInput()">Replace</button>
+      </div>
+      <div class="hint">A token is stored. Click Replace to enter a new one.</div>
     </div>
-    <input id="f-token" type="password" placeholder="eyJ...">
-    <div class="hint">A Home Assistant long-lived access token. Create one in HA → Profile (bottom-left) → Long-lived access tokens → Create token. Leave blank to keep existing token.</div>
+    <div id="f-token-input-box">
+      <input id="f-token" type="password" placeholder="eyJ...">
+      <div class="hint">A Home Assistant long-lived access token. Create one in HA → Profile (bottom-left) → Long-lived access tokens → Create token.</div>
+    </div>
   </div>
   <div id="f-header-row" style="display:none">
     <label>Headers (JSON object)</label>
@@ -600,14 +609,22 @@ function openForm(idx) {
   document.getElementById('f-strat').value = strat;
   const tokenSaved = t.auth && t.auth.token === '***';
   document.getElementById('f-token').value = '';
-  document.getElementById('f-token').placeholder = tokenSaved ? '(leave blank to keep existing token)' : 'eyJ...';
   document.getElementById('f-token').dataset.saved = tokenSaved ? '1' : '';
-  document.getElementById('f-token-saved').style.display = tokenSaved ? '' : 'none';
+  document.getElementById('f-token-saved-box').style.display = tokenSaved ? '' : 'none';
+  document.getElementById('f-token-input-box').style.display = tokenSaved ? 'none' : '';
+  document.getElementById('f-token').placeholder = 'eyJ...';
   document.getElementById('f-headers').value = strat === 'http_header' ? JSON.stringify((t.auth && t.auth.headers) || {}) : '';
   document.getElementById('f-token-row').style.display = strat === 'ha_token' ? '' : 'none';
   document.getElementById('f-header-row').style.display = strat === 'http_header' ? '' : 'none';
   document.getElementById('edit-panel').style.display = '';
   document.getElementById('f-name').focus();
+}
+
+function showTokenInput() {
+  document.getElementById('f-token-saved-box').style.display = 'none';
+  document.getElementById('f-token-input-box').style.display = '';
+  document.getElementById('f-token').dataset.saved = '';
+  document.getElementById('f-token').focus();
 }
 
 function closeForm() {
