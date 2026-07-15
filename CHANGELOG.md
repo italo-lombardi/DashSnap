@@ -29,9 +29,12 @@ All notable changes to DashSnap.
 - `aiohttp` >=3.10 → >=3.14.1
 - `playwright` >=1.47.0 → >=1.61.0
 
+### Notes
+- Saving via the ingress UI converts a flat `base_url`/`token` config to `targets_json` format. This is a one-way migration — the flat fields are cleared after the first save. `_load_config()` handles both formats so existing automations and API calls are unaffected.
+
 ---
 
-## [0.0.3] - 2026-07-14
+ - 2026-07-14
 
 ### Added
 - Structured logging — startup logs (targets, default, port), request success/error logs via `logging` module. Visible in `ha apps logs c1b14015_dashsnap`.

@@ -620,6 +620,10 @@ function onStratChange() {
 }
 
 function formSave() {
+  const name = document.getElementById('f-name').value.trim();
+  const base_url = document.getElementById('f-url').value.trim();
+  if (!name) { alert('Name is required'); return false; }
+  if (!base_url) { alert('Base URL is required'); return false; }
   const strat = document.getElementById('f-strat').value;
   const auth = {strategy: strat};
   if (strat === 'ha_token') {
@@ -630,12 +634,13 @@ function formSave() {
   }
   if (strat === 'http_header') {
     try { auth.headers = JSON.parse(document.getElementById('f-headers').value || '{}'); }
-    catch(e) { alert('Invalid JSON in headers: ' + e.message); return; }
+    catch(e) { alert('Invalid JSON in headers: ' + e.message); return false; }
   }
-  const t = {name: document.getElementById('f-name').value.trim(), base_url: document.getElementById('f-url').value.trim(), auth};
+  const t = {name, base_url, auth};
   if (editIdx !== null) targets[editIdx] = t; else targets.push(t);
   render();
   closeForm();
+  return true;
 }
 
 function deleteTarget(i) { targets.splice(i, 1); render(); }
@@ -648,8 +653,7 @@ async function save() {
   msg.className = 'msg'; msg.textContent = '';
   // auto-commit open form before saving
   if (document.getElementById('edit-panel').style.display !== 'none') {
-    formSave();
-    if (document.getElementById('edit-panel').style.display !== 'none') return; // formSave rejected (e.g. bad JSON)
+    if (!formSave()) return;
   }
   try {
     const payload = {base_url:'', token:'', targets_json: JSON.stringify(targets)};
