@@ -11,6 +11,14 @@
 #     - ~/Downloads:/media/DashSnap        # save to Downloads
 #     - /mnt/nas/DashSnap:/media/DashSnap  # save to NAS
 #
+# Local HA dev — see recordings in HA media browser:
+#   Create a .env file (gitignored):
+#
+#     RECORDINGS_PATH=/absolute/path/to/ha/config/media/DashSnap
+#
+#   Then docker compose up -d — recordings write directly into HA's media folder.
+#   Default (no .env): RECORDINGS_PATH=./recordings
+#
 services:
   dashsnap:
     build: .
@@ -19,7 +27,7 @@ services:
       - "8099:8099"
     volumes:
       - ./options.json:/data/options.json:rw
-      - ./recordings:/media/DashSnap   # ← change left side to redirect output
+      - ${RECORDINGS_PATH:-./recordings}:/media/DashSnap
     # host.docker.internal lets DashSnap reach a service running on the Docker host.
     extra_hosts:
       - "host.docker.internal:host-gateway"
