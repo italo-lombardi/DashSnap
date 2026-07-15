@@ -1,24 +1,13 @@
 name: DashSnap
-version: "0.0.3"
+version: "0.0.4"
 slug: dashsnap
-description: >
-  Record or screenshot any web page via headless Chromium.
-
-  PRIORITY RULE: if targets_json is set, base_url and token are ignored entirely.
-  Only one mode is active at a time — you cannot mix them.
-
-  SINGLE TARGET (HA only): set base_url to your HA URL (e.g. http://homeassistant.local:8123)
-  and token to a long-lived access token (HA Profile → Long-lived access tokens).
-  Leave targets_json empty.
-
-  MULTI-TARGET (HA + Grafana + public pages): leave base_url and token empty,
-  paste a JSON array into targets_json. Example:
-  [{"name":"ha","base_url":"http://homeassistant.local:8123","auth":{"strategy":"ha_token","token":"eyJ..."}},
-  {"name":"grafana","base_url":"https://grafana.example.com","auth":{"strategy":"http_header","headers":{"Authorization":"Bearer glsa_xxx"}}},
-  {"name":"public","base_url":"https://example.com","auth":{"strategy":"none"}}]
+description: >-
+  Screenshot or record any web page via headless Chromium. Supports HA, Grafana, and public pages. See README for setup.
 arch:
   - aarch64
   - amd64
+ingress: true
+ingress_port: 8099
 init: false
 boot: manual
 map:

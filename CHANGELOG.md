@@ -2,6 +2,38 @@
 
 All notable changes to DashSnap.
 
+## [0.0.4] - 2026-07-15
+
+### Added
+- **Ingress config UI** — friendly web panel in the HA sidebar to configure targets without editing raw JSON. Accessible via the DashSnap panel in the HA left nav.
+  - Target list with Edit / Delete per row
+  - Edit form with auth strategy picker (`ha_token` / `http_header` / `none`) — shows/hides relevant fields
+  - Token masked on load; shows "Token saved" badge with Replace button when a token is already stored
+  - Live config reload on save — no addon restart needed (local/dev mode); auto-restarts under HA supervisor
+  - Button label adapts: "Save" locally, "Save & Restart" under supervisor
+
+### Changed
+- `config.yaml` description trimmed — detail moved to README
+- `ingress: true` + `ingress_port: 8099` added to `config.yaml`
+
+### Fixed
+- `GET /config` masks token as `***` — never leaks the token over the network
+- Server-side validation of `targets_json` before forwarding to supervisor
+- `INGRESS_PORT` env var respected for port binding
+- `esc()` now escapes `>` as well as `<`
+
+### Dependencies (bumps from dependabot PRs #5–#11)
+- `pytest` >=7.0 → >=9.1.1
+- `pytest-asyncio` >=0.21 → >=1.4.0
+- `pytest-cov` >=4.0 → >=7.1.0
+- `aiohttp` >=3.10 → >=3.14.1
+- `playwright` >=1.47.0 → >=1.61.0
+
+### Notes
+- Saving via the ingress UI converts a flat `base_url`/`token` config to `targets_json` format. This is a one-way migration — the flat fields are cleared after the first save. `_load_config()` handles both formats so existing automations and API calls are unaffected.
+
+---
+
 ## [0.0.3] - 2026-07-14
 
 ### Added
