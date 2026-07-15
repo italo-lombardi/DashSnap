@@ -545,7 +545,7 @@ _CONFIG_UI = """<!DOCTYPE html>
 <footer>
   <div class="footer-left">
     <a href="https://github.com/italo-lombardi/DashSnap" target="_blank" rel="noopener">DashSnap — Screenshot &amp; record any web page via headless Chromium</a>
-    &nbsp;·&nbsp; Changes take effect after restart
+    &nbsp;·&nbsp; Changes apply immediately
     &nbsp;·&nbsp; by <a href="https://www.linkedin.com/in/italolombardi/" target="_blank" rel="noopener">Italo Lombardi</a>
     &nbsp;·&nbsp; <a href="https://github.com/italo-lombardi" target="_blank" rel="noopener">more projects</a>
   </div>
