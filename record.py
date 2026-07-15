@@ -243,6 +243,8 @@ async def _check_target_health(target):
     base_url = target["base_url"].rstrip("/")
     auth_cfg = target.get("auth", {"strategy": "none"})
     strategy = auth_cfg.get("strategy", "none")
+    if not base_url:
+        return {"name": name, "ok": True, "strategy": strategy, "base_url": base_url}
     try:
         async with aiohttp.ClientSession() as s:
             if strategy == "ha_token":
@@ -385,6 +387,14 @@ async def handle_record_ha(request):
             {"ok": False, "error": f"unknown target: {target_name!r}"}, status=400
         )
     base = target["base_url"].rstrip("/")
+    if not base:
+        return web.json_response(
+            {
+                "ok": False,
+                "error": f"target {target_name!r} has no base_url — use /record with a full URL instead",
+            },
+            status=400,
+        )
     url = base + ("" if path.startswith("/") else "/") + path
     if not url.startswith(("http://", "https://")):
         return web.json_response(
@@ -721,12 +731,15 @@ async def handle_config_get(request):
             data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         data = {}
+    targets_json = data.get("targets_json", "")
+    if not targets_json and data.get("targets"):
+        targets_json = json.dumps(data["targets"], indent=2)
     return web.json_response(
         {
             "ok": True,
             "base_url": data.get("base_url", ""),
             "token": "***" if data.get("token") else "",
-            "targets_json": data.get("targets_json", ""),
+            "targets_json": targets_json,
             "has_supervisor": bool(os.environ.get("SUPERVISOR_TOKEN")),
         }
     )

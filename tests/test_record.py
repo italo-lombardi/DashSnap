@@ -188,6 +188,19 @@ class TestHandleRecordHa:
             resp = await record.handle_record_ha(req)
             assert resp.status == 400
 
+    async def test_empty_base_url_target_returns_400(self):
+        import record
+
+        no_base = {"name": "public", "base_url": "", "auth": {"strategy": "none"}}
+        with (
+            patch.object(record, "TARGETS", {"public": no_base}),
+            patch.object(record, "DEFAULT_TARGET", "public"),
+        ):
+            req = _req(path="/record/ha", params={"path": "/lovelace/0"})
+            resp = await record.handle_record_ha(req)
+            assert resp.status == 400
+            assert "base_url" in record.json.loads(resp.body)["error"]
+
     async def test_unknown_target_returns_400(self):
         import record
 
@@ -500,6 +513,14 @@ def _mock_session(status=200, json_data=None, content_type="application/json", e
 
 
 class TestCheckTargetHealth:
+    async def test_empty_base_url_returns_ok(self):
+        import record
+
+        result = await record._check_target_health(
+            {"name": "public", "base_url": "", "auth": {"strategy": "none"}}
+        )
+        assert result["ok"] is True
+
     async def test_ha_token_healthy(self):
         import record
 
@@ -644,6 +665,22 @@ class TestHandleConfigGet:
         data = json.loads(resp.body)
         assert data["ok"] is True
         assert data["base_url"] == ""
+
+    async def test_targets_array_returned_as_json_when_targets_json_empty(self, tmp_path):
+        import json
+
+        import record
+
+        targets = [
+            {"name": "ha", "base_url": "http://ha.local:8123", "auth": {"strategy": "ha_token"}}
+        ]
+        cfg = tmp_path / "options.json"
+        cfg.write_text(json.dumps({"targets": targets}))
+        req = make_mocked_request("GET", "/config")
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            resp = await record.handle_config_get(req)
+        data = json.loads(resp.body)
+        assert data["targets_json"] == json.dumps(targets, indent=2)
 
 
 # ---------------------------------------------------------------------------
