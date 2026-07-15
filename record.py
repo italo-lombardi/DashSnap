@@ -646,6 +646,11 @@ async function save() {
   const btn = document.querySelector('.save-btn');
   const msg = document.getElementById('msg');
   msg.className = 'msg'; msg.textContent = '';
+  // auto-commit open form before saving
+  if (document.getElementById('edit-panel').style.display !== 'none') {
+    formSave();
+    if (document.getElementById('edit-panel').style.display !== 'none') return; // formSave rejected (e.g. bad JSON)
+  }
   try {
     const payload = {base_url:'', token:'', targets_json: JSON.stringify(targets)};
     btn.disabled = true; btn.textContent = 'Saving…';
