@@ -19,7 +19,7 @@ All notable changes to DashSnap.
   Or set `OUT_DIR` to keep the old path: `-e OUT_DIR=/media/dashsnap`.
 
 - `GET /config` now returns the `targets` array serialised as `targets_json` when `targets_json` is empty — fixes blank ingress UI after saving config via the HA Add-on config tab.
-- Removed redundant `mkdir -p /media/DashSnap` from Dockerfile (runtime `OUT_DIR.mkdir()` handles it).
+- **Recording filenames simplified** — output files are now named by capture timestamp only (`20260715_201234.png` / `20260715_201234.webm`), removing the URL-derived prefix. Cleaner filenames, no user-controlled data in paths.
 
 ### Fixed
 - Path traversal hardened: output file paths now resolved via `os.path.realpath` + `os.path.commonpath` containment check (closes CodeQL `py/path-injection` alerts).

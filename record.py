@@ -3,7 +3,6 @@ import json
 import logging
 import os
 import pathlib
-import re
 import shutil
 from datetime import datetime
 
@@ -166,13 +165,8 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # Sanitise tag to [a-zA-Z0-9_] only — prevents path traversal in filenames
-    _raw_tag = re.sub(r"[^a-zA-Z0-9]+", "_", url.split("://")[-1].strip("/")) or "page"
-    if not re.fullmatch(r"[a-zA-Z0-9_]+", _raw_tag):
-        raise RuntimeError(f"unexpected tag after sanitisation: {_raw_tag!r}")
-    tag = _raw_tag  # taint ends at the fullmatch check above
     is_png = fmt == "png"
-    tmp_dir = OUT_DIR / (f".tmp_{tag}_{stamp}")
+    tmp_dir = OUT_DIR / f".tmp_{stamp}"
     if not is_png:
         tmp_dir.mkdir(exist_ok=True)
 
@@ -204,7 +198,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
                     )
 
             if is_png:
-                final = OUT_DIR / f"{tag}_{stamp}.png"
+                final = OUT_DIR / f"{stamp}.png"
                 await page.screenshot(path=str(final))
                 return str(final)
 
@@ -217,7 +211,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None):  # pragma:
     if not webms:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise RuntimeError("no video produced")
-    final = OUT_DIR / f"{tag}_{stamp}.webm"
+    final = OUT_DIR / f"{stamp}.webm"
     webms[0].replace(final)
     shutil.rmtree(tmp_dir, ignore_errors=True)
     return str(final)

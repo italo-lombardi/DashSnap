@@ -146,14 +146,14 @@ class TestHandleRecord:
         with (
             patch.object(record, "TARGETS", {"public": NONE_TARGET}),
             patch.object(record, "DEFAULT_TARGET", "public"),
-            patch.object(record, "record", AsyncMock(return_value="/media/dashsnap/out.png")),
+            patch.object(record, "record", AsyncMock(return_value="/media/DashSnap/out.png")),
         ):
             req = _req(params={"url": "https://example.com", "format": "png"})
             resp = await record.handle_record(req)
             assert resp.status == 200
             data = record.json.loads(resp.body)
             assert data["ok"]
-            assert data["file"] == "/media/dashsnap/out.png"
+            assert data["file"] == "/media/DashSnap/out.png"
 
     async def test_record_exception_returns_500(self):
         import record
@@ -202,7 +202,7 @@ class TestHandleRecordHa:
     async def test_path_prepends_base_url(self):
         import record
 
-        mock_record = AsyncMock(return_value="/media/dashsnap/out.png")
+        mock_record = AsyncMock(return_value="/media/DashSnap/out.png")
         with (
             patch.object(record, "TARGETS", {"ha": HA_TARGET}),
             patch.object(record, "DEFAULT_TARGET", "ha"),
@@ -216,7 +216,7 @@ class TestHandleRecordHa:
     async def test_path_without_leading_slash(self):
         import record
 
-        mock_record = AsyncMock(return_value="/media/dashsnap/out.png")
+        mock_record = AsyncMock(return_value="/media/DashSnap/out.png")
         with (
             patch.object(record, "TARGETS", {"ha": HA_TARGET}),
             patch.object(record, "DEFAULT_TARGET", "ha"),
