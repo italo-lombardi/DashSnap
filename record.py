@@ -273,7 +273,8 @@ async def _check_target_health(target):
                     else:
                         result["error"] = f"HTTP {r.status}"
                     return result
-    except Exception:
+    except Exception as e:
+        log.warning("health check failed for %s: %s", name, e)
         return {
             "name": name,
             "ok": False,
