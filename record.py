@@ -46,7 +46,9 @@ def _load_config():
 
     CFG = cfg
     TARGETS = {t["name"]: t for t in CFG.get("targets", [])}
-    DEFAULT_TARGET = next(iter(TARGETS)) if TARGETS else None
+    if not TARGETS:
+        TARGETS = {"public": {"name": "public", "base_url": "", "auth": {"strategy": "none"}}}
+    DEFAULT_TARGET = next(iter(TARGETS))
 
 
 _load_config()  # pragma: no cover
