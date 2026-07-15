@@ -52,7 +52,7 @@ _load_config()  # pragma: no cover
 
 log = logging.getLogger("dashsnap")
 
-OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/dashsnap"))
+OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/DashSnap"))
 
 DEFAULTS = {
     "seconds": 30,

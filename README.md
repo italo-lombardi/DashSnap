@@ -110,7 +110,7 @@ Mount an `options.json` file (same format as the multi-target JSON above):
 # docker-compose.yml
 volumes:
   - ./options.json:/data/options.json:ro
-  - ./recordings:/media/dashsnap
+  - ./recordings:/media/DashSnap
 ```
 
 ### Via Docker — environment variables (no config file)
@@ -118,7 +118,7 @@ volumes:
 ```bash
 docker run -d \
   -p 8099:8099 \
-  -v ./recordings:/media/dashsnap \
+  -v ./recordings:/media/DashSnap \
   -e DASHSNAP_BASE_URL=http://homeassistant.local:8123 \
   -e DASHSNAP_AUTH_STRATEGY=ha_token \
   -e DASHSNAP_AUTH_TOKEN=eyJ... \
@@ -180,7 +180,7 @@ curl http://localhost:8099/ha/dashboards
 
 | Setup | Default location |
 |---|---|
-| HA Add-on | `/media/dashsnap/` (visible in HA Media browser) |
+| HA Add-on | `/media/DashSnap/` (visible in HA Media browser) |
 | Docker Compose | `./recordings/` next to `docker-compose.yml` |
 
 ---
