@@ -459,9 +459,6 @@ _CONFIG_UI = """<!DOCTYPE html>
   input, select, textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; font-size: .9rem; font-family: inherit; }
   textarea { font-family: monospace; resize: vertical; min-height: 80px; }
   input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ha); }
-  .mode-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-  .tab { flex: 1; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--muted); cursor: pointer; font-size: .85rem; text-align: center; transition: .15s; }
-  .tab.active { border-color: var(--ha); color: var(--ha); background: rgba(3,169,244,.1); }
   .target-card { border: 1px solid var(--border); border-radius: 6px; padding: 14px; margin-bottom: 10px; position: relative; }
   .target-card h3 { font-size: .85rem; color: var(--muted); margin-bottom: 10px; }
   .remove-btn { position: absolute; top: 10px; right: 10px; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.1rem; padding: 0 4px; }
@@ -484,26 +481,8 @@ _CONFIG_UI = """<!DOCTYPE html>
 <h1>DashSnap — Configure</h1>
 
 <div class="card">
-  <div class="mode-tabs">
-    <div class="tab active" id="tab-single" onclick="setMode('single')">Single target (HA)</div>
-    <div class="tab" id="tab-multi" onclick="setMode('multi')">Multi-target</div>
-  </div>
-
-  <!-- single mode -->
-  <div id="single-mode">
-    <label>HA Base URL</label>
-    <input id="s-url" type="url" placeholder="http://homeassistant.local:8123">
-    <div class="hint">URL reachable from within the DashSnap container</div>
-    <label>Long-lived Access Token</label>
-    <input id="s-token" type="password" placeholder="eyJ...">
-    <div class="hint">HA → Profile → Long-lived access tokens → Create token</div>
-  </div>
-
-  <!-- multi mode -->
-  <div id="multi-mode" style="display:none">
-    <div id="targets-list"></div>
-    <button class="add-btn" onclick="addTarget()">+ Add target</button>
-  </div>
+  <div id="targets-list"></div>
+  <button class="add-btn" onclick="addTarget()">+ Add target</button>
 
   <button class="save-btn" onclick="save()">Save &amp; Restart</button>
   <div class="msg" id="msg"></div>
@@ -511,15 +490,6 @@ _CONFIG_UI = """<!DOCTYPE html>
 
 <script>
 const STRATEGIES = ['ha_token','http_header','none'];
-let mode = 'single';
-
-function setMode(m) {
-  mode = m;
-  document.getElementById('tab-single').classList.toggle('active', m === 'single');
-  document.getElementById('tab-multi').classList.toggle('active', m === 'multi');
-  document.getElementById('single-mode').style.display = m === 'single' ? '' : 'none';
-  document.getElementById('multi-mode').style.display = m === 'multi' ? '' : 'none';
-}
 
 function addTarget(t) {
   t = t || {name:'', base_url:'', auth:{strategy:'ha_token', token:'', headers:{}}};
@@ -561,13 +531,6 @@ function onStratChange(sel) {
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function buildPayload() {
-  if (mode === 'single') {
-    return {
-      base_url: document.getElementById('s-url').value.trim(),
-      token: document.getElementById('s-token').value.trim(),
-      targets_json: ''
-    };
-  }
   const cards = document.querySelectorAll('#targets-list .target-card');
   const targets = [];
   for (const c of cards) {
@@ -607,16 +570,14 @@ async function save() {
     const r = await fetch('config');
     const j = await r.json();
     if (j.targets_json) {
-      setMode('multi');
       try {
         JSON.parse(j.targets_json).forEach(addTarget);
       } catch(e) {
         const msg = document.getElementById('msg');
         msg.className = 'msg err'; msg.textContent = 'Stored targets_json is invalid: ' + e.message;
       }
-    } else {
-      document.getElementById('s-url').value = j.base_url || '';
-      document.getElementById('s-token').value = j.token || '';
+    } else if (j.base_url) {
+      addTarget({name:'default', base_url: j.base_url, auth:{strategy:'ha_token', token: j.token === '***' ? '' : (j.token || ''), headers:{}}});
     }
   } catch(e) {
     const msg = document.getElementById('msg');
