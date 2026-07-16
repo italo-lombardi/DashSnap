@@ -205,12 +205,18 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
-
-        async def _load_and_auth(ctx):
-            page = await ctx.new_page()
+        ctx_kwargs = {"viewport": {"width": vw, "height": vh}}
+        if not is_png:
+            ctx_kwargs["record_video_dir"] = str(tmp_dir)
+            ctx_kwargs["record_video_size"] = {"width": vw, "height": vh}
+        ctx = await browser.new_context(**ctx_kwargs)
+        page = await ctx.new_page()
+        try:
             if is_ha_url or strategy not in ("ha_token", "none"):
                 await apply_auth(ctx, page, auth_cfg, base_url)
+
             await page.goto(url, wait_until="networkidle")
+
             if is_ha_url:
                 try:
                     await page.wait_for_selector("home-assistant", timeout=15000)
@@ -223,33 +229,13 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
                         "not authenticated after token inject — frontend did not render. "
                         "Token invalid, or HA auth store shape changed."
                     )
-            return page
 
-        # For webm with delay: settle in a non-recording context, then record clean.
-        # For png or no delay: single context is fine.
-        if not is_png and delay:
-            settle_ctx = await browser.new_context(viewport={"width": vw, "height": vh})
-            try:
-                settle_page = await _load_and_auth(settle_ctx)
-                await settle_page.wait_for_timeout(delay * 1000)
-            finally:
-                await settle_ctx.close()
-
-        ctx_kwargs = {"viewport": {"width": vw, "height": vh}}
-        if not is_png:
-            ctx_kwargs["record_video_dir"] = str(tmp_dir)
-            ctx_kwargs["record_video_size"] = {"width": vw, "height": vh}
-        ctx = await browser.new_context(**ctx_kwargs)
-        try:
-            page = await _load_and_auth(ctx)
+            if delay:
+                await page.wait_for_timeout(delay * 1000)
 
             if is_png:
-                if delay:
-                    await page.wait_for_timeout(delay * 1000)
                 final = _safe(OUT_DIR / f"{stamp}_{slug}.png")
                 await page.screenshot(path=str(final))
-                await ctx.close()
-                await browser.close()
                 return str(final)
 
             await page.wait_for_timeout(seconds * 1000)
@@ -261,8 +247,28 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
     if not webms:
         shutil.rmtree(tmp_dir, ignore_errors=True)  # codeql[py/path-injection]
         raise RuntimeError("no video produced")
+    raw = webms[0]
     final = _safe(OUT_DIR / f"{stamp}_{slug}.webm")
-    webms[0].replace(final)
+    if delay:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-y",
+            "-ss",
+            str(delay),
+            "-i",
+            str(raw),
+            "-c",
+            "copy",
+            str(final),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+        raw.unlink(missing_ok=True)
+        if not final.exists():
+            raise RuntimeError("ffmpeg trim failed")
+    else:
+        raw.replace(final)
     shutil.rmtree(tmp_dir, ignore_errors=True)  # codeql[py/path-injection]
     return str(final)
 
