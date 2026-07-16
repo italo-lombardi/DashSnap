@@ -427,10 +427,13 @@ async def handle_health(request):
     ok = all(r["ok"] for r in results)
     port = int(os.environ.get("INGRESS_PORT", 8099))
     try:
-        self_ips = sorted({
-            a[4][0] for a in socket.getaddrinfo(socket.gethostname(), None)
-            if ':' not in a[4][0] and not a[4][0].startswith('127.')
-        })
+        self_ips = sorted(
+            {
+                a[4][0]
+                for a in socket.getaddrinfo(socket.gethostname(), None)
+                if ":" not in a[4][0] and not a[4][0].startswith("127.")
+            }
+        )
         self_urls = [f"http://{ip}:{port}" for ip in self_ips]
     except Exception:
         self_urls = []
@@ -866,10 +869,13 @@ if __name__ == "__main__":
     log.info("Configured targets: %s", list(TARGETS.keys()) if TARGETS else "none")
     log.info("Default target: %s", DEFAULT_TARGET)
     try:
-        _addrs = sorted({
-            a[4][0] for a in socket.getaddrinfo(socket.gethostname(), None)
-            if ':' not in a[4][0] and not a[4][0].startswith('127.')
-        })
+        _addrs = sorted(
+            {
+                a[4][0]
+                for a in socket.getaddrinfo(socket.gethostname(), None)
+                if ":" not in a[4][0] and not a[4][0].startswith("127.")
+            }
+        )
         if _addrs:
             log.info("DashSnap reachable from HA at: %s", [f"http://{ip}:{port}" for ip in _addrs])
     except Exception:
