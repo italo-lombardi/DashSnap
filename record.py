@@ -888,7 +888,10 @@ async def handle_config_save(request):
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as r:
                 if r.status != 200:
-                    log.warning("supervisor options POST returned %s (config already saved directly)", r.status)
+                    log.warning(
+                        "supervisor options POST returned %s (config already saved directly)",
+                        r.status,
+                    )
             # restart addon so new config takes effect
             async with s.post(
                 "http://supervisor/addons/self/restart",

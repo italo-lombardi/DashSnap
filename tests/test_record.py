@@ -1004,7 +1004,9 @@ class TestHandleConfigSave:
         session.post = _post
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
-        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}):
+        with patch.dict(
+            "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}
+        ):
             with patch("aiohttp.ClientSession", return_value=session):
                 resp = await record.handle_config_save(req)
         data = json.loads(resp.body)
@@ -1047,7 +1049,9 @@ class TestHandleConfigSave:
         session.post = _post
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
-        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}):
+        with patch.dict(
+            "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}
+        ):
             with patch("aiohttp.ClientSession", return_value=session):
                 resp = await record.handle_config_save(req)
         assert resp.status == 200
@@ -1194,7 +1198,9 @@ class TestHandleConfigSave:
         session.post = _post
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
-        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}):
+        with patch.dict(
+            "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}
+        ):
             with patch("aiohttp.ClientSession", return_value=session):
                 resp = await record.handle_config_save(req)
         data = json.loads(resp.body)
@@ -1234,7 +1240,9 @@ class TestHandleConfigSave:
         session.post = _post
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
-        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}):
+        with patch.dict(
+            "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}
+        ):
             with patch("aiohttp.ClientSession", return_value=session):
                 resp = await record.handle_config_save(req)
         data = json.loads(resp.body)
@@ -1260,7 +1268,9 @@ class TestHandleConfigSave:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
         session.post = _boom
-        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}):
+        with patch.dict(
+            "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}
+        ):
             with patch("aiohttp.ClientSession", return_value=session):
                 resp = await record.handle_config_save(req)
         assert resp.status == 502
