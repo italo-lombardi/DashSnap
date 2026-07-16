@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [0.0.11] - 2026-07-16
+
+### Fixed
+- Config save UI no longer shows JSON parse error when addon restarts — ingress 502 on restart is now treated as success ("Saved. Restarting addon…")
+
 ## [0.0.10] - 2026-07-16
 
 ### Fixed
