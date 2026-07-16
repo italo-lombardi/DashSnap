@@ -729,12 +729,11 @@ class TestHandleConfigGet:
         assert ha["auth"]["token"] == "***"
 
     @pytest.mark.asyncio
-    async def test_empty_token_stays_empty(self, tmp_path):
+    async def test_empty_token_stays_empty(self):
         import json
 
         import record
 
-        cfg = tmp_path / "options.json"
         targets = [
             {
                 "name": "ha",
@@ -742,9 +741,8 @@ class TestHandleConfigGet:
                 "auth": {"strategy": "ha_token", "token": ""},
             }
         ]
-        cfg.write_text(json.dumps({"targets": targets}))
         req = make_mocked_request("GET", "/config")
-        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+        with patch.object(record, "CFG", {"targets": targets}):
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
         ha = next(t for t in data["targets"] if t["name"] == "ha")
@@ -832,7 +830,7 @@ class TestHandleConfigGet:
         ha = next(t for t in data["targets"] if t["name"] == "ha")
         assert ha["auth"]["token"] == "***"
 
-    async def test_headers_masked_in_targets(self, tmp_path):
+    async def test_headers_masked_in_targets(self):
         import json
 
         import record
@@ -843,10 +841,8 @@ class TestHandleConfigGet:
                 "auth": {"strategy": "http_header", "headers": {"Authorization": "Bearer secret"}},
             }
         ]
-        cfg = tmp_path / "options.json"
-        cfg.write_text(json.dumps({"targets": targets}))
         req = make_mocked_request("GET", "/config")
-        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+        with patch.object(record, "CFG", {"targets": targets}):
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
         grafana = next(t for t in data["targets"] if t["name"] == "grafana")

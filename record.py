@@ -794,13 +794,8 @@ async def handle_config_ui(request):
 
 
 async def handle_config_get(request):
-    """GET /config — return current options.json for the UI to pre-populate."""
-    cfg_path = os.environ.get("CONFIG_PATH", "/data/options.json")
-    try:
-        with open(cfg_path) as f:
-            data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        data = {}
+    """GET /config — return current config for the UI to pre-populate."""
+    data = CFG
     targets_json = data.get("targets_json", "")
     if not targets_json and data.get("targets"):
         targets_json = json.dumps(data["targets"], indent=2)
