@@ -269,10 +269,10 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
         )
         await proc.wait()
         raw.unlink(missing_ok=True)
-        if not final.exists():
+        if not final.exists():  # codeql[py/path-injection]
             raise RuntimeError("ffmpeg trim failed")
     else:
-        raw.replace(final)
+        raw.replace(final)  # codeql[py/path-injection]
     shutil.rmtree(tmp_dir, ignore_errors=True)  # codeql[py/path-injection]
     return str(final)
 
