@@ -1010,16 +1010,13 @@ class TestHandleConfigSave:
         assert "token" not in captured.get("options", {})
 
     @pytest.mark.asyncio
-    async def test_supervisor_error_falls_back_to_direct_write(self):
+    async def test_supervisor_error_falls_back_to_direct_write(self, tmp_path):
         import json
-        import os
-        import tempfile
 
         import record
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump({}, f)
-            cfg_path = f.name
+        cfg_path = tmp_path / "options.json"
+        cfg_path.write_text("{}")
 
         req = make_mocked_request("POST", "/config")
         req.read = AsyncMock(return_value=b'{"base_url":"","token":"","targets_json":"[]"}')
@@ -1045,26 +1042,21 @@ class TestHandleConfigSave:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
         with (
-            patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": cfg_path}),
+            patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}),
             patch("aiohttp.ClientSession", return_value=session),
         ):
             resp = await record.handle_config_save(req)
-        os.unlink(cfg_path)
         assert resp.status == 200
         data = json.loads(resp.body)
         assert data["ok"] is True
 
     @pytest.mark.asyncio
-    async def test_supervisor_error_fallback_missing_json(self):
-        """Supervisor rejects options — fallback reads missing options.json (starts fresh)."""
-        import os
-        import tempfile
-
+    async def test_supervisor_error_fallback_missing_json(self, tmp_path):
+        """Supervisor rejects options — fallback reads invalid options.json (starts fresh)."""
         import record
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            f.write("not json")
-            cfg_path = f.name
+        cfg_path = tmp_path / "options.json"
+        cfg_path.write_text("not json")
 
         req = make_mocked_request("POST", "/config")
         req.read = AsyncMock(return_value=b'{"base_url":"","token":"","targets_json":"[]"}')
@@ -1088,11 +1080,10 @@ class TestHandleConfigSave:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
         with (
-            patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": cfg_path}),
+            patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}),
             patch("aiohttp.ClientSession", return_value=session),
         ):
             resp = await record.handle_config_save(req)
-        os.unlink(cfg_path)
         assert resp.status == 200
 
     @pytest.mark.asyncio
