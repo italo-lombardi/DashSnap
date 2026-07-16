@@ -5,12 +5,29 @@ import os
 import pathlib
 import re
 import shutil
+import socket
 from datetime import datetime
 from urllib.parse import urlparse
 
 import aiohttp
 from aiohttp import web
 from playwright.async_api import async_playwright
+
+_PORT = int(os.environ.get("INGRESS_PORT", 8099))
+
+
+def _self_ips() -> list[str]:
+    try:
+        return sorted(
+            {
+                a[4][0]
+                for a in socket.getaddrinfo(socket.gethostname(), None)
+                if a[0] == socket.AF_INET and not a[4][0].startswith("127.")
+            }
+        )
+    except OSError:
+        return []
+
 
 # ---------------------------------------------------------------------------
 # Config load + env var overlay + backward-compat shim
@@ -424,7 +441,10 @@ async def handle_record_ha(request):
 async def handle_health(request):
     results = await asyncio.gather(*[_check_target_health(t) for t in TARGETS.values()])
     ok = all(r["ok"] for r in results)
-    return web.json_response({"ok": ok, "targets": list(results)})
+    loop = asyncio.get_running_loop()
+    ips = await loop.run_in_executor(None, _self_ips)
+    self_urls = [f"http://{ip}:{_PORT}" for ip in ips]
+    return web.json_response({"ok": ok, "targets": list(results), "self_urls": self_urls})
 
 
 async def handle_targets(request):
@@ -851,8 +871,12 @@ app.router.add_get("/ha/dashboards", handle_ha_dashboards)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    port = int(os.environ.get("INGRESS_PORT", 8099))
-    log.info("DashSnap starting on port %d", port)
+    log.info("DashSnap starting on port %d", _PORT)
     log.info("Configured targets: %s", list(TARGETS.keys()) if TARGETS else "none")
     log.info("Default target: %s", DEFAULT_TARGET)
-    web.run_app(app, host="0.0.0.0", port=port, access_log=logging.getLogger("aiohttp.access"))
+    _addrs = _self_ips()
+    if _addrs:
+        log.info(
+            "DashSnap reachable from HA at: %s", ", ".join(f"http://{ip}:{_PORT}" for ip in _addrs)
+        )
+    web.run_app(app, host="0.0.0.0", port=_PORT, access_log=logging.getLogger("aiohttp.access"))

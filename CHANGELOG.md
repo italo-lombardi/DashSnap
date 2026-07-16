@@ -2,6 +2,19 @@
 
 All notable changes to DashSnap.
 
+## [0.0.6] - 2026-07-16
+
+### Added
+- `/health` response now includes `self_urls` — a list of `http://<ip>:<port>` addresses the addon is reachable on. Used by the HA integration to auto-detect the correct internal URL instead of requiring manual configuration.
+- Startup log prints reachable IPs: `DashSnap reachable from HA at: http://172.x.x.x:8099` — copy this into the integration config if autodetect fails.
+
+### Changed
+- `_PORT` hoisted to module-level constant (was re-read from env on every `/health` call).
+- IP discovery uses `AF_INET` address-family filter instead of string heuristics — unambiguous IPv4-only, no loopback.
+- `socket.getaddrinfo` runs in a thread executor inside `/health` — no longer blocks the async event loop.
+
+---
+
 ## [0.0.5] - 2026-07-15
 
 ### Added

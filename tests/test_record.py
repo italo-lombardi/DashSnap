@@ -324,6 +324,29 @@ class TestHandleTargets:
 # ---------------------------------------------------------------------------
 
 
+class TestSelfIps:
+    def test_returns_ipv4_non_loopback(self):
+        import record
+
+        with patch.object(
+            record.socket,
+            "getaddrinfo",
+            return_value=[
+                (record.socket.AF_INET, None, None, None, ("192.168.1.10", 0)),
+                (record.socket.AF_INET, None, None, None, ("127.0.0.1", 0)),
+                (record.socket.AF_INET6, None, None, None, ("::1", 0)),
+            ],
+        ):
+            ips = record._self_ips()
+        assert ips == ["192.168.1.10"]
+
+    def test_returns_empty_on_oserror(self):
+        import record
+
+        with patch.object(record.socket, "getaddrinfo", side_effect=OSError("no network")):
+            assert record._self_ips() == []
+
+
 class TestHandleHealth:
     async def test_all_healthy_returns_200(self):
         import record
@@ -366,6 +389,36 @@ class TestHandleHealth:
             req = _req(path="/health")
             resp = await record.handle_health(req)
             assert resp.status == 200
+
+    async def test_self_urls_included_in_response(self):
+        import record
+
+        healthy = {"name": "ha", "ok": True, "strategy": "ha_token", "probed": True}
+        with (
+            patch.object(record, "TARGETS", {"ha": HA_TARGET}),
+            patch.object(record, "_check_target_health", AsyncMock(return_value=healthy)),
+            patch.object(record, "_self_ips", return_value=["192.168.1.10"]),
+        ):
+            req = _req(path="/health")
+            resp = await record.handle_health(req)
+            data = record.json.loads(resp.body)
+            assert "self_urls" in data
+            assert any("192.168.1.10" in u for u in data["self_urls"])
+            assert not any("127.0.0.1" in u for u in data["self_urls"])
+
+    async def test_self_urls_empty_on_getaddrinfo_error(self):
+        import record
+
+        healthy = {"name": "ha", "ok": True, "strategy": "ha_token", "probed": True}
+        with (
+            patch.object(record, "TARGETS", {"ha": HA_TARGET}),
+            patch.object(record, "_check_target_health", AsyncMock(return_value=healthy)),
+            patch.object(record, "_self_ips", return_value=[]),
+        ):
+            req = _req(path="/health")
+            resp = await record.handle_health(req)
+            data = record.json.loads(resp.body)
+            assert data["self_urls"] == []
 
 
 # ---------------------------------------------------------------------------
