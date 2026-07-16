@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [0.1.1] - 2026-07-16
+
+### Fixed
+- `run.sh` now exports `SHADOW_CONFIG_PATH` with a default of `/data/dashsnap.json` — can be overridden via Docker `-e SHADOW_CONFIG_PATH=...` (same pattern as `CONFIG_PATH`)
+
 ## [0.1.0] - 2026-07-16
 
 ### Added
