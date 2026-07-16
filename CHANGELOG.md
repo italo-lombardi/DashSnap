@@ -5,30 +5,15 @@ All notable changes to DashSnap.
 ## [0.0.7] - 2026-07-16
 
 ### Added
-- `/health` response now includes `self_urls` — a list of `http://<ip>:<port>` addresses the addon is reachable on. Used by the HA integration to auto-detect the correct internal URL instead of requiring manual configuration.
-- Startup log prints reachable IPs: `DashSnap reachable from HA at: http://172.x.x.x:8099` — copy this into the integration config if autodetect fails.
-- Sidebar icon (`mdi:monitor-screenshot`) and panel title in HA left menu.
-- **`public` built-in target** — always present at top of target list, read-only, `strategy: none`. Works out of the box with `/record?url=https://...` — zero configuration needed.
-- `GET /record/ha` returns a clear `400` when the selected target has no `base_url` or is not `ha_token` strategy.
-- Recording filenames include a URL path slug: `20260715_201234_lovelace_0.png`.
-
-### Changed
-- **HA addon Options panel removed** — the `options`/`schema` blocks are gone from `config.yaml`. The HA schema can't mask JSON subfields, so tokens were shown in plain text there. The ingress UI is now the only config surface for HA addon users and masks tokens correctly.
-- `_PORT` hoisted to module-level constant (was re-read from env on every `/health` call).
-- IP discovery uses `AF_INET` address-family filter instead of string heuristics — unambiguous IPv4-only, no loopback.
-- `socket.getaddrinfo` runs in a thread executor inside `/health` — no longer blocks the async event loop.
-- **`base_url` now optional** — only required for `ha_token` strategy. `http_header` and `none` targets need no base URL. Ingress UI hides the field accordingly.
-- Auth strategy moved to top of ingress form — drives which fields appear.
-- **Output folder renamed `/media/dashsnap` → `/media/DashSnap`** ⚠️ update your volume mount or set `OUT_DIR=/media/dashsnap` to keep the old path.
-- `GET /config` always injects `public` target at top of the returned list.
-- `docker-compose.yml` volume mount is now `:rw` so the ingress UI can save config.
-- `RECORDINGS_PATH` env var in `.env` (gitignored) lets Docker write recordings into a local HA devcontainer media folder.
-
-### Fixed
-- Path traversal hardened: `os.path.realpath` + `startswith(safe_root + os.sep)` on all output paths.
-- `OUT_DIR` default corrected to `/media/DashSnap`.
-- `_check_target_health` skips HTTP check for targets with no `base_url`.
-
----
-
-For earlier versions see the [release history](https://github.com/italo-lombardi/DashSnap/releases).
+- Record any web page as `.webm` video or `.png` screenshot via headless Chromium
+- `/record/ha` — record an HA dashboard by path with automatic token injection
+- `/record` — record any URL with configurable auth target
+- `/health` — target connectivity check; includes `self_urls` for HA integration autodetect
+- `/targets` — list configured targets
+- `/ha/dashboards` — list HA Lovelace dashboards (requires `ha_token` target)
+- **`public` built-in target** — always available, zero config, works with `/record?url=https://...`
+- **Ingress UI** — visual target editor with masked tokens, available at port 8099 in both HA addon and Docker
+- **Three auth strategies**: `ha_token` (HA token injection), `http_header` (Grafana, Kibana, any API-key service), `none` (public/LAN pages)
+- Recording filenames include timestamp + URL slug: `20260716_120000_lovelace_0.png`
+- Sidebar icon (`mdi:monitor-screenshot`) in HA left menu
+- `self_urls` in `/health` response — HA integration uses this to auto-detect the correct internal addon address
