@@ -38,11 +38,15 @@ def _self_ips() -> list[str]:
 def _load_config():
     global CFG, TARGETS, DEFAULT_TARGET
     cfg_path = os.environ.get("CONFIG_PATH", "/data/options.json")
-    try:
-        with open(cfg_path) as _f:
-            cfg = json.load(_f)
-    except FileNotFoundError:
-        cfg = {}
+    # Shadow config survives supervisor wipe on restart (supervisor never writes this file)
+    shadow_path = os.environ.get("SHADOW_CONFIG_PATH", "/data/dashsnap.json")
+    cfg = {}
+    for path in (cfg_path, shadow_path):
+        try:
+            with open(path) as _f:
+                cfg.update(json.load(_f))
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
 
     if "targets" not in cfg:
         targets_json = cfg.get("targets_json", "").strip()
@@ -845,16 +849,16 @@ async def handle_config_save(request):
 
     supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
     if not supervisor_token:
-        # Dev / local mode — write directly to options.json
-        cfg_path = os.environ.get("CONFIG_PATH", "/data/options.json")
+        # Dev / local mode — write to shadow config
+        shadow_path = os.environ.get("SHADOW_CONFIG_PATH", "/data/dashsnap.json")
         try:
             try:
-                with open(cfg_path) as f:
+                with open(shadow_path) as f:
                     existing = json.load(f)
-            except FileNotFoundError:
+            except (FileNotFoundError, json.JSONDecodeError):
                 existing = {}
             existing.update(options)
-            with open(cfg_path, "w") as f:
+            with open(shadow_path, "w") as f:
                 json.dump(existing, f, indent=2)
             _load_config()
         except Exception as e:
@@ -862,16 +866,16 @@ async def handle_config_save(request):
             return web.json_response({"ok": False, "error": str(e)}, status=500)
         return web.json_response({"ok": True, "restarting": False})
 
-    # Always write options.json directly — supervisor wipes it on restart when schema is empty
-    cfg_path = os.environ.get("CONFIG_PATH", "/data/options.json")
+    # Write to shadow config — supervisor never touches this file, so it survives restart wipe
+    shadow_path = os.environ.get("SHADOW_CONFIG_PATH", "/data/dashsnap.json")
     try:
         try:
-            with open(cfg_path) as f:
+            with open(shadow_path) as f:
                 existing = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             existing = {}
         existing.update(options)
-        with open(cfg_path, "w") as f:
+        with open(shadow_path, "w") as f:
             json.dump(existing, f, indent=2)
         _load_config()
     except Exception as e:
