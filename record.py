@@ -755,10 +755,17 @@ async function save() {
     const payload = {base_url:'', token:'', targets_json: JSON.stringify(targets)};
     btn.disabled = true; btn.textContent = 'Saving…';
     const r = await fetch('./config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-    const j = await r.json();
-    if (!j.ok) throw new Error(j.error || 'save failed');
-    msg.className = 'msg ok';
-    msg.textContent = j.restarting ? 'Saved. Restarting addon…' : 'Saved. Configuration applied.';
+    let j;
+    try { j = await r.json(); } catch(_) { j = null; }
+    // Addon restart drops the connection — ingress returns 502/empty; treat as success
+    if (j === null || (r.status === 502 && !r.headers.get('content-type')?.includes('application/json'))) {
+      msg.className = 'msg ok';
+      msg.textContent = 'Saved. Restarting addon…';
+    } else {
+      if (!j.ok) throw new Error(j.error || 'save failed');
+      msg.className = 'msg ok';
+      msg.textContent = j.restarting ? 'Saved. Restarting addon…' : 'Saved. Configuration applied.';
+    }
   } catch(e) {
     msg.className = 'msg err'; msg.textContent = e.message;
   } finally {
