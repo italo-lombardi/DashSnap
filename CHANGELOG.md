@@ -2,6 +2,13 @@
 
 All notable changes to DashSnap.
 
+## [0.0.7] - 2026-07-16
+
+### Removed
+- **HA addon Options panel** — the `options`/`schema` blocks are gone from `config.yaml`, so the Options tab no longer appears. The HA schema can't mask JSON subfields, so tokens were shown in plain text there. The ingress UI is now the only config surface and masks tokens.
+
+---
+
 ## [0.0.6] - 2026-07-16
 
 ### Added

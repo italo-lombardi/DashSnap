@@ -57,19 +57,15 @@ Once the add-on is running, open the **DashSnap** panel in the HA sidebar. You'l
 
 ![Ingress config UI — edit form](assets/01_ingress_edit.png)
 
-### Via the HA Add-on config tab
+### Via Docker — options.json
 
-| Field | Description |
-|---|---|
-| `base_url` | Your HA instance URL (single-target shorthand) |
-| `token` | HA long-lived access token (single-target shorthand) |
-| `targets_json` | JSON array of targets (takes priority over `base_url`/`token`) |
+For standalone Docker (no ingress UI), configure targets in `options.json`.
 
 **PRIORITY RULE:** if `targets_json` is set, `base_url` and `token` are ignored entirely.
 
 #### Single HA target
 
-Fill in `base_url` and `token`. Leave `targets_json` empty.
+Set `base_url` and `token`. Leave `targets_json` empty.
 
 **How to get a long-lived token:**
 1. HA → Profile (bottom left) → **Long-lived access tokens** → **Create token**
@@ -77,7 +73,7 @@ Fill in `base_url` and `token`. Leave `targets_json` empty.
 
 #### Multiple targets
 
-Paste a JSON array into `targets_json`:
+Set `targets_json` to a JSON array of targets:
 
 ```json
 [
@@ -105,7 +101,7 @@ Paste a JSON array into `targets_json`:
 | `http_header` | Grafana, Kibana, any API-key app | No |
 | `none` | Public pages, LAN-only dashboards | No |
 
-### Via Docker — options.json
+#### Mount
 
 Mount an `options.json` file:
 
