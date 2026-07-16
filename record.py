@@ -231,7 +231,9 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
                     )
 
             if delay:
+                log.debug("settling %ds before recording %s", delay, url)
                 await page.wait_for_timeout(delay * 1000)
+                log.debug("settle complete, recording for %ds", seconds)
 
             if is_png:
                 final = _safe(OUT_DIR / f"{stamp}_{slug}.png")
