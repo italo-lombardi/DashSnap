@@ -370,13 +370,17 @@ def _params(q):
         fmt = q.get("format", "webm").lower()
         if fmt not in ("webm", "png"):
             fmt = "webm"
+        seconds = max(1, min(int(q.get("seconds", DEFAULTS["seconds"])), 3600))
+        delay = min(int(q.get("delay", 0)), 60)
+        if delay < 0:
+            delay = 0
         return {
-            "seconds": min(int(q.get("seconds", DEFAULTS["seconds"])), 3600),
+            "seconds": seconds,
             "vw": int(q.get("viewport_width", DEFAULTS["viewport_width"])),
             "vh": int(q.get("viewport_height", DEFAULTS["viewport_height"])),
             "fmt": fmt,
             "target_name": q.get("target") or None,
-            "delay": min(int(q.get("delay", 0)), 60),
+            "delay": delay,
         }
     except (ValueError, TypeError) as e:
         raise web.HTTPBadRequest(reason=f"invalid param: {e}") from e

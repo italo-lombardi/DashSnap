@@ -111,6 +111,16 @@ class TestParams:
 
         assert record._params({"delay": "999"})["delay"] == 60
 
+    def test_delay_negative_clamped_to_zero(self):
+        import record
+
+        assert record._params({"delay": "-5"})["delay"] == 0
+
+    def test_seconds_minimum_one(self):
+        import record
+
+        assert record._params({"seconds": "0"})["seconds"] == 1
+
 
 # ---------------------------------------------------------------------------
 # /record
