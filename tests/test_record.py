@@ -1010,28 +1010,117 @@ class TestHandleConfigSave:
         assert "token" not in captured.get("options", {})
 
     @pytest.mark.asyncio
-    async def test_supervisor_error_returns_502(self):
+    async def test_supervisor_error_falls_back_to_direct_write(self):
+        import json
+        import os
+        import tempfile
+
+        import record
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({}, f)
+            cfg_path = f.name
+
+        req = make_mocked_request("POST", "/config")
+        req.read = AsyncMock(return_value=b'{"base_url":"","token":"","targets_json":"[]"}')
+        mock_opts_resp = AsyncMock()
+        mock_opts_resp.status = 400
+        mock_opts_resp.__aenter__ = AsyncMock(return_value=mock_opts_resp)
+        mock_opts_resp.__aexit__ = AsyncMock(return_value=False)
+
+        mock_restart_resp = AsyncMock()
+        mock_restart_resp.status = 200
+        mock_restart_resp.__aenter__ = AsyncMock(return_value=mock_restart_resp)
+        mock_restart_resp.__aexit__ = AsyncMock(return_value=False)
+
+        call_count = 0
+
+        def _post(*a, **kw):
+            nonlocal call_count
+            call_count += 1
+            return mock_opts_resp if call_count == 1 else mock_restart_resp
+
+        session = AsyncMock()
+        session.post = _post
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+        with (
+            patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": cfg_path}),
+            patch("aiohttp.ClientSession", return_value=session),
+        ):
+            resp = await record.handle_config_save(req)
+        os.unlink(cfg_path)
+        assert resp.status == 200
+        data = json.loads(resp.body)
+        assert data["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_supervisor_error_fallback_missing_json(self):
+        """Supervisor rejects options — fallback reads missing options.json (starts fresh)."""
+        import os
+        import tempfile
+
+        import record
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write("not json")
+            cfg_path = f.name
+
+        req = make_mocked_request("POST", "/config")
+        req.read = AsyncMock(return_value=b'{"base_url":"","token":"","targets_json":"[]"}')
+        mock_opts_resp = AsyncMock()
+        mock_opts_resp.status = 422
+        mock_opts_resp.__aenter__ = AsyncMock(return_value=mock_opts_resp)
+        mock_opts_resp.__aexit__ = AsyncMock(return_value=False)
+        mock_restart_resp = AsyncMock()
+        mock_restart_resp.status = 200
+        mock_restart_resp.__aenter__ = AsyncMock(return_value=mock_restart_resp)
+        mock_restart_resp.__aexit__ = AsyncMock(return_value=False)
+        call_count = 0
+
+        def _post(*a, **kw):
+            nonlocal call_count
+            call_count += 1
+            return mock_opts_resp if call_count == 1 else mock_restart_resp
+
+        session = AsyncMock()
+        session.post = _post
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+        with (
+            patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": cfg_path}),
+            patch("aiohttp.ClientSession", return_value=session),
+        ):
+            resp = await record.handle_config_save(req)
+        os.unlink(cfg_path)
+        assert resp.status == 200
+
+    @pytest.mark.asyncio
+    async def test_supervisor_error_fallback_write_fails(self):
+        """Supervisor rejects options — direct write fails → returns 500."""
         import json
 
         import record
 
         req = make_mocked_request("POST", "/config")
-        req.read = AsyncMock(
-            return_value=b'{"base_url":"http://ha.local:8123","token":"t","targets_json":""}'
-        )
-        mock_resp = AsyncMock()
-        mock_resp.status = 400
-        mock_resp.text = AsyncMock(return_value="bad request")
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=False)
+        req.read = AsyncMock(return_value=b'{"base_url":"","token":"","targets_json":"[]"}')
+        mock_opts_resp = AsyncMock()
+        mock_opts_resp.status = 422
+        mock_opts_resp.__aenter__ = AsyncMock(return_value=mock_opts_resp)
+        mock_opts_resp.__aexit__ = AsyncMock(return_value=False)
         session = AsyncMock()
-        session.post = lambda *a, **kw: mock_resp
+        session.post = lambda *a, **kw: mock_opts_resp
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
-        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok"}):
-            with patch("aiohttp.ClientSession", return_value=session):
-                resp = await record.handle_config_save(req)
-        assert resp.status == 502
+        with (
+            patch.dict(
+                "os.environ",
+                {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": "/nonexistent/path/options.json"},
+            ),
+            patch("aiohttp.ClientSession", return_value=session),
+        ):
+            resp = await record.handle_config_save(req)
+        assert resp.status == 500
         data = json.loads(resp.body)
         assert data["ok"] is False
 

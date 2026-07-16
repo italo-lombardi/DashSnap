@@ -872,11 +872,24 @@ async def handle_config_save(request):
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as r:
                 if r.status != 200:
-                    text = await r.text()
-                    return web.json_response(
-                        {"ok": False, "error": f"supervisor returned {r.status}: {text}"},
-                        status=502,
+                    # Supervisor rejected options (e.g. schema removed) — write directly
+                    log.warning(
+                        "supervisor options rejected (%s), writing options.json directly", r.status
                     )
+                    cfg_path = os.environ.get("CONFIG_PATH", "/data/options.json")
+                    try:
+                        try:
+                            with open(cfg_path) as f:
+                                existing = json.load(f)
+                        except (FileNotFoundError, json.JSONDecodeError):
+                            existing = {}
+                        existing.update(options)
+                        with open(cfg_path, "w") as f:
+                            json.dump(existing, f, indent=2)
+                        _load_config()
+                    except Exception as e:
+                        log.error("config save (direct fallback) failed: %s", e)
+                        return web.json_response({"ok": False, "error": str(e)}, status=500)
             # restart addon so new config takes effect
             async with s.post(
                 "http://supervisor/addons/self/restart",

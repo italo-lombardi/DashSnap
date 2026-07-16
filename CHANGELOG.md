@@ -2,6 +2,13 @@
 
 All notable changes to DashSnap.
 
+## [0.0.8] - 2026-07-16
+
+### Fixed
+- Config save now works after options schema removal — when HA supervisor rejects the options POST (no schema), DashSnap falls back to writing `options.json` directly and restarting via supervisor. Fixes 502 on save after upgrading from 0.0.7.
+
+---
+
 ## [0.0.7] - 2026-07-16
 
 ### Added

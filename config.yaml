@@ -1,5 +1,5 @@
 name: DashSnap
-version: "0.0.7"
+version: "0.0.8"
 slug: dashsnap
 description: >-
   Screenshot or record any web page via headless Chromium. Supports HA, Grafana, and public pages. See README for setup.
