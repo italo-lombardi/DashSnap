@@ -15,5 +15,6 @@ All notable changes to DashSnap.
 - **Ingress UI** — visual target editor with masked tokens, available at port 8099 in both HA addon and Docker
 - **Three auth strategies**: `ha_token` (HA token injection), `http_header` (Grafana, Kibana, any API-key service), `none` (public/LAN pages)
 - Recording filenames include timestamp + URL slug: `20260716_120000_lovelace_0.png`
+- `delay` parameter settles the page before recording begins — video duration equals `seconds` exactly
 - Sidebar icon (`mdi:monitor-screenshot`) in HA left menu
 - `self_urls` in `/health` response — HA integration uses this to auto-detect the correct internal addon address
