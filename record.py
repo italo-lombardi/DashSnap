@@ -761,10 +761,16 @@ async function save() {
     if (j === null || (r.status === 502 && !r.headers.get('content-type')?.includes('application/json'))) {
       msg.className = 'msg ok';
       msg.textContent = 'Saved. Restarting addon…';
+      setTimeout(() => location.reload(), 8000);
     } else {
       if (!j.ok) throw new Error(j.error || 'save failed');
       msg.className = 'msg ok';
-      msg.textContent = j.restarting ? 'Saved. Restarting addon…' : 'Saved. Configuration applied.';
+      if (j.restarting) {
+        msg.textContent = 'Saved. Restarting addon…';
+        setTimeout(() => location.reload(), 8000);
+      } else {
+        msg.textContent = 'Saved. Configuration applied.';
+      }
     }
   } catch(e) {
     msg.className = 'msg err'; msg.textContent = e.message;
