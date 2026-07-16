@@ -609,8 +609,11 @@ class TestConfigShim:
             "os.environ", {"CONFIG_PATH": str(base), "SHADOW_CONFIG_PATH": str(shadow)}
         ):
             record._load_config()
-        assert "shadow" in record.TARGETS
-        assert "base" not in record.TARGETS
+        try:
+            assert "shadow" in record.TARGETS
+            assert "base" not in record.TARGETS
+        finally:
+            record._load_config()  # restore globals from real env
 
 
 # ---------------------------------------------------------------------------
@@ -784,7 +787,7 @@ class TestHandleConfigGet:
         assert ha["auth"]["token"] == ""
 
     @pytest.mark.asyncio
-    async def test_missing_file_returns_empty(self):
+    async def test_empty_cfg_returns_public_only(self):
         import json
 
         import record
@@ -798,7 +801,7 @@ class TestHandleConfigGet:
         assert any(t["name"] == "public" for t in data["targets"])
 
     @pytest.mark.asyncio
-    async def test_invalid_json_file_returns_empty(self):
+    async def test_empty_cfg_returns_list(self):
         import json
 
         import record
