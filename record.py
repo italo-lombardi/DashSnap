@@ -507,6 +507,7 @@ _CONFIG_UI = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DashSnap — Configure</title>
+<link rel="icon" type="image/png" href="favicon.ico">
 <style>
   :root{--ha:#03a9f4;--bg:#0d1117;--card:#161b22;--border:#21262d;--text:#e6edf3;--muted:#6e7681;--err:#f85149;--ok:#3fb950;--ha-dim:rgba(3,169,244,.1);--radius:8px}
   *{box-sizing:border-box;margin:0;padding:0}
@@ -624,8 +625,8 @@ _CONFIG_UI = """<!DOCTYPE html>
 
 <footer>
   <div class="footer-left">
-    <a href="https://github.com/italo-lombardi/DashSnap" target="_blank" rel="noopener">DashSnap — Screenshot &amp; record any web page via headless Chromium</a>
-    &nbsp;·&nbsp; Changes apply immediately
+    <a href="https://github.com/italo-lombardi/DashSnap" target="_blank" rel="noopener">DashSnap</a>
+    &nbsp;·&nbsp; <a href="https://github.com/italo-lombardi/DashSnap-Integration" target="_blank" rel="noopener">HA Integration</a>
     &nbsp;·&nbsp; by <a href="https://www.linkedin.com/in/italolombardi/" target="_blank" rel="noopener">Italo Lombardi</a>
     &nbsp;·&nbsp; <a href="https://github.com/italo-lombardi" target="_blank" rel="noopener">more projects</a>
   </div>
@@ -890,6 +891,9 @@ async def handle_config_save(request):
 
 app = web.Application()
 app.router.add_get("/", handle_config_ui)
+app.router.add_get(
+    "/favicon.ico", lambda r: web.FileResponse(pathlib.Path(__file__).parent / "icon.png")
+)
 app.router.add_get("/config", handle_config_get)
 app.router.add_post("/config", handle_config_save)
 app.router.add_route("*", "/record", handle_record)
