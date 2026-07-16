@@ -15,7 +15,7 @@ Record or screenshot any web page via headless Chromium — Home Assistant dashb
 
 ## What it does
 
-DashSnap runs a small HTTP API server (port 8099). You call it with a URL or HA path and it records a `.webm` video or takes a `.png` screenshot using a headless Chromium browser. It handles authentication automatically — HA token injection, HTTP header auth (Grafana, Kibana), or no auth for public pages.
+DashSnap runs a small HTTP API server (port 8099). You call it with a URL or HA path and it records a `.webm` video or takes a `.png` screenshot using a headless Chromium browser. It handles authentication automatically — HA token injection, HTTP header auth (Grafana, Kibana, Prometheus, or any tool secured with an API key or Bearer token), or no auth for public pages and local-network services.
 
 A built-in **`public` target** is always available — no configuration needed to record any public URL.
 
@@ -46,7 +46,7 @@ curl http://localhost:8099/health
 
 ### Via the ingress UI (recommended)
 
-Once the add-on is running, open the **DashSnap** panel in the HA sidebar. You'll find a friendly configuration page to add, edit and delete targets without touching JSON.
+Once DashSnap is running — whether as an HA add-on or a standalone Docker container — open `http://<host>:8099` in your browser. You'll find a friendly configuration page to add, edit and delete targets without touching JSON.
 
 ![Ingress config UI — target list](assets/00_ingress_ui.png)
 
@@ -57,19 +57,15 @@ Once the add-on is running, open the **DashSnap** panel in the HA sidebar. You'l
 
 ![Ingress config UI — edit form](assets/01_ingress_edit.png)
 
-### Via the HA Add-on config tab
+### Via options.json (Docker / devcontainer only)
 
-| Field | Description |
-|---|---|
-| `base_url` | Your HA instance URL (single-target shorthand) |
-| `token` | HA long-lived access token (single-target shorthand) |
-| `targets_json` | JSON array of targets (takes priority over `base_url`/`token`) |
+Prefer file-based config? Mount `options.json` and edit directly — useful for CI, devcontainers, or scripted Docker setups. **HA addon users: use the ingress UI instead** — the addon Options tab has been removed in favour of the UI.
 
 **PRIORITY RULE:** if `targets_json` is set, `base_url` and `token` are ignored entirely.
 
 #### Single HA target
 
-Fill in `base_url` and `token`. Leave `targets_json` empty.
+Set `base_url` and `token`. Leave `targets_json` empty.
 
 **How to get a long-lived token:**
 1. HA → Profile (bottom left) → **Long-lived access tokens** → **Create token**
@@ -77,7 +73,7 @@ Fill in `base_url` and `token`. Leave `targets_json` empty.
 
 #### Multiple targets
 
-Paste a JSON array into `targets_json`:
+Set `targets_json` to a JSON array of targets:
 
 ```json
 [
@@ -102,10 +98,10 @@ Paste a JSON array into `targets_json`:
 | Strategy | Use for | `base_url` required |
 |---|---|---|
 | `ha_token` | Home Assistant | Yes |
-| `http_header` | Grafana, Kibana, any API-key app | No |
-| `none` | Public pages, LAN-only dashboards | No |
+| `http_header` | Any tool secured with an API key or Bearer token (Grafana, Kibana, Prometheus, custom dashboards, LAN services) — pass any headers you need | No |
+| `none` | Public pages, LAN-only dashboards, local IP addresses | No |
 
-### Via Docker — options.json
+#### Mount
 
 Mount an `options.json` file:
 
@@ -132,6 +128,7 @@ curl "http://localhost:8099/record/ha?path=/lovelace/0&format=png"
 | `path` | Yes | — | HA route, e.g. `/lovelace/0`, `/energy` |
 | `target` | No | first target | Named `ha_token` target |
 | `seconds` | No | 30 | Video duration (max 3600). Ignored for `png`. |
+| `delay` | No | 0 | Seconds to wait for the page to settle before recording starts. Does not affect video duration. |
 | `format` | No | `webm` | `webm` or `png` |
 | `viewport_width` | No | 1920 | Width in pixels |
 | `viewport_height` | No | 1080 | Height in pixels |
@@ -204,4 +201,13 @@ data:
 
 ## Sibling projects
 
-- **[DashSnap Integration](https://github.com/italo-lombardi/DashSnap-Integration)** — HA custom integration to trigger DashSnap from automations and scripts
+Other Home Assistant integrations by the same author:
+
+| Integration | Description |
+|---|---|
+| [DashSnap Integration](https://github.com/italo-lombardi/DashSnap-Integration) | HA custom integration to trigger DashSnap from automations and scripts |
+| [Entity Availability](https://github.com/italo-lombardi/Home-Assistant-EntityAvailability) | Monitors HA entity availability by group — tracks offline, degraded, suppression, and availability % over time windows |
+| [Entity Guard](https://github.com/italo-lombardi/Home-Assistant-EntityGuard) | Enforces entity state via declarative rules — replaces hand-written auto-off, auto-lock, and kill-switch automations |
+| [Entity Distance](https://github.com/italo-lombardi/Home-Assistant-EntityDistance) | Tracks distance between 2–5 HA entities (persons, devices, zones) — direction, speed, ETA, proximity, group sensors |
+| [Fuel Compare](https://github.com/italo-lombardi/Home-Assistant-FuelCompare) | Tracks live fuel prices from fuelcompare.ie |
+| [WashWise](https://github.com/italo-lombardi/Home-Assistant-WashWise) | Decide whether to wash your car, bike, or solar panels based on the weather forecast — verdict, score, and per-day breakdown |

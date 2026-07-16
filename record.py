@@ -6,6 +6,7 @@ import pathlib
 import re
 import shutil
 import socket
+import uuid
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -190,15 +191,19 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
     _slug_raw = re.sub(r"[^a-zA-Z0-9]+", "_", _path)[:40].strip("_") or "page"
     _m = re.fullmatch(r"[a-zA-Z0-9_]{1,40}", _slug_raw)
     slug = _m.group(0) if _m else "page"  # taint ends: only fullmatch group used
+    token = uuid.uuid4().hex  # server-generated, never user-controlled — safe for paths
     is_png = fmt == "png"
 
     def _safe(p: pathlib.Path) -> pathlib.Path:
-        resolved = pathlib.Path(os.path.realpath(p))
-        if not str(resolved).startswith(str(safe_root) + os.sep):
-            raise RuntimeError(f"path escapes OUT_DIR: {resolved}")
+        # Path traversal guard: canonicalize and enforce containment in OUT_DIR.
+        resolved = p.resolve()
+        try:
+            resolved.relative_to(safe_root)
+        except ValueError as exc:
+            raise RuntimeError(f"path escapes OUT_DIR: {resolved}") from exc
         return resolved
 
-    tmp_dir = _safe(OUT_DIR / f".tmp_{stamp}_{slug}")
+    tmp_dir = _safe(OUT_DIR / f".tmp_{stamp}_{token}")
     if not is_png:
         tmp_dir.mkdir(exist_ok=True)
 
@@ -230,7 +235,9 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
                     )
 
             if delay:
+                log.debug("settling %ds before recording %s", delay, url)
                 await page.wait_for_timeout(delay * 1000)
+                log.debug("settle complete, recording for %ds", seconds)
 
             if is_png:
                 final = _safe(OUT_DIR / f"{stamp}_{slug}.png")
@@ -246,9 +253,34 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
     if not webms:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise RuntimeError("no video produced")
+    raw = webms[0]
     final = _safe(OUT_DIR / f"{stamp}_{slug}.webm")
-    webms[0].replace(final)
-    shutil.rmtree(tmp_dir, ignore_errors=True)
+    if delay:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(raw),
+                "-ss",
+                str(delay),
+                "-t",
+                str(seconds),
+                "-c",
+                "copy",
+                str(final),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await proc.wait()
+            if proc.returncode != 0 or not final.exists():
+                raise RuntimeError(f"ffmpeg trim failed (exit {proc.returncode})")
+            raw.unlink(missing_ok=True)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+    else:
+        raw.replace(final)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
     return str(final)
 
 
@@ -349,13 +381,18 @@ def _params(q):
         fmt = q.get("format", "webm").lower()
         if fmt not in ("webm", "png"):
             fmt = "webm"
+        seconds = max(1, min(int(q.get("seconds", DEFAULTS["seconds"])), 3600))
+        delay = min(int(q.get("delay", 0)), 60)
+        if delay < 0:
+            delay = 0
+        delay = min(delay, max(0, seconds - 1))
         return {
-            "seconds": min(int(q.get("seconds", DEFAULTS["seconds"])), 3600),
+            "seconds": seconds,
             "vw": int(q.get("viewport_width", DEFAULTS["viewport_width"])),
             "vh": int(q.get("viewport_height", DEFAULTS["viewport_height"])),
             "fmt": fmt,
             "target_name": q.get("target") or None,
-            "delay": min(int(q.get("delay", 0)), 60),
+            "delay": delay,
         }
     except (ValueError, TypeError) as e:
         raise web.HTTPBadRequest(reason=f"invalid param: {e}") from e
@@ -478,6 +515,7 @@ _CONFIG_UI = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DashSnap — Configure</title>
+<link rel="icon" type="image/png" href="favicon.ico">
 <style>
   :root{--ha:#03a9f4;--bg:#0d1117;--card:#161b22;--border:#21262d;--text:#e6edf3;--muted:#6e7681;--err:#f85149;--ok:#3fb950;--ha-dim:rgba(3,169,244,.1);--radius:8px}
   *{box-sizing:border-box;margin:0;padding:0}
@@ -595,8 +633,8 @@ _CONFIG_UI = """<!DOCTYPE html>
 
 <footer>
   <div class="footer-left">
-    <a href="https://github.com/italo-lombardi/DashSnap" target="_blank" rel="noopener">DashSnap — Screenshot &amp; record any web page via headless Chromium</a>
-    &nbsp;·&nbsp; Changes apply immediately
+    <a href="https://github.com/italo-lombardi/DashSnap" target="_blank" rel="noopener">DashSnap</a>
+    &nbsp;·&nbsp; <a href="https://github.com/italo-lombardi/DashSnap-Integration" target="_blank" rel="noopener">HA Integration</a>
     &nbsp;·&nbsp; by <a href="https://www.linkedin.com/in/italolombardi/" target="_blank" rel="noopener">Italo Lombardi</a>
     &nbsp;·&nbsp; <a href="https://github.com/italo-lombardi" target="_blank" rel="noopener">more projects</a>
   </div>
@@ -861,6 +899,7 @@ async def handle_config_save(request):
 
 app = web.Application()
 app.router.add_get("/", handle_config_ui)
+app.router.add_get("/favicon.ico", lambda r: web.FileResponse(pathlib.Path("/icon.png")))
 app.router.add_get("/config", handle_config_get)
 app.router.add_post("/config", handle_config_save)
 app.router.add_route("*", "/record", handle_record)

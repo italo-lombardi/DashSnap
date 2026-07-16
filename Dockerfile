@@ -5,6 +5,7 @@ RUN pip install --no-cache-dir playwright==1.61.0 aiohttp==3.14.1 \
     && python -m playwright install --with-deps chromium
 
 COPY record.py /record.py
+COPY icon.png /icon.png
 COPY run.sh /run.sh
 RUN chmod +x /run.sh
 
