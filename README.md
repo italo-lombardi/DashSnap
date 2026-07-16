@@ -128,6 +128,7 @@ curl "http://localhost:8099/record/ha?path=/lovelace/0&format=png"
 | `path` | Yes | — | HA route, e.g. `/lovelace/0`, `/energy` |
 | `target` | No | first target | Named `ha_token` target |
 | `seconds` | No | 30 | Video duration (max 3600). Ignored for `png`. |
+| `delay` | No | 0 | Seconds to wait for the page to settle before recording starts. Does not affect video duration. |
 | `format` | No | `webm` | `webm` or `png` |
 | `viewport_width` | No | 1920 | Width in pixels |
 | `viewport_height` | No | 1080 | Height in pixels |
