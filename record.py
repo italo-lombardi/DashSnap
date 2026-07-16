@@ -862,6 +862,22 @@ async def handle_config_save(request):
             return web.json_response({"ok": False, "error": str(e)}, status=500)
         return web.json_response({"ok": True, "restarting": False})
 
+    # Always write options.json directly — supervisor wipes it on restart when schema is empty
+    cfg_path = os.environ.get("CONFIG_PATH", "/data/options.json")
+    try:
+        try:
+            with open(cfg_path) as f:
+                existing = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            existing = {}
+        existing.update(options)
+        with open(cfg_path, "w") as f:
+            json.dump(existing, f, indent=2)
+        _load_config()
+    except Exception as e:
+        log.error("config save (direct write) failed: %s", e)
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
     headers = {"Authorization": f"Bearer {supervisor_token}", "Content-Type": "application/json"}
     try:
         async with aiohttp.ClientSession() as s:
@@ -872,24 +888,7 @@ async def handle_config_save(request):
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as r:
                 if r.status != 200:
-                    # Supervisor rejected options (e.g. schema removed) — write directly
-                    log.warning(
-                        "supervisor options rejected (%s), writing options.json directly", r.status
-                    )
-                    cfg_path = os.environ.get("CONFIG_PATH", "/data/options.json")
-                    try:
-                        try:
-                            with open(cfg_path) as f:
-                                existing = json.load(f)
-                        except (FileNotFoundError, json.JSONDecodeError):
-                            existing = {}
-                        existing.update(options)
-                        with open(cfg_path, "w") as f:
-                            json.dump(existing, f, indent=2)
-                        _load_config()
-                    except Exception as e:
-                        log.error("config save (direct fallback) failed: %s", e)
-                        return web.json_response({"ok": False, "error": str(e)}, status=500)
+                    log.warning("supervisor options POST returned %s (config already saved directly)", r.status)
             # restart addon so new config takes effect
             async with s.post(
                 "http://supervisor/addons/self/restart",

@@ -967,11 +967,13 @@ class TestHandleConfigSave:
         assert "targets_json" in data["error"]
 
     @pytest.mark.asyncio
-    async def test_masked_token_not_forwarded(self):
+    async def test_masked_token_not_forwarded(self, tmp_path):
         import json
 
         import record
 
+        cfg_path = tmp_path / "options.json"
+        cfg_path.write_text("{}")
         req = make_mocked_request("POST", "/config")
         req.read = AsyncMock(
             return_value=b'{"base_url":"http://ha.local:8123","token":"***","targets_json":""}'
@@ -1002,12 +1004,55 @@ class TestHandleConfigSave:
         session.post = _post
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
-        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok"}):
+        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}):
             with patch("aiohttp.ClientSession", return_value=session):
                 resp = await record.handle_config_save(req)
         data = json.loads(resp.body)
         assert data["ok"] is True
         assert "token" not in captured.get("options", {})
+
+    @pytest.mark.asyncio
+    async def test_config_written_before_restart_survives_supervisor_wipe(self, tmp_path):
+        """Config written to options.json before restart — survives supervisor wipe."""
+        import json
+
+        import aiohttp
+
+        import record
+
+        cfg_path = tmp_path / "options.json"
+        cfg_path.write_text('{"targets": []}')
+
+        req = make_mocked_request("POST", "/config")
+        req.read = AsyncMock(
+            return_value=b'{"base_url":"http://ha.local:8123","token":"t","targets_json":"[]"}'
+        )
+        ok_resp = AsyncMock()
+        ok_resp.status = 200
+        ok_resp.__aenter__ = AsyncMock(return_value=ok_resp)
+        ok_resp.__aexit__ = AsyncMock(return_value=False)
+
+        drop_cm = AsyncMock()
+        drop_cm.__aenter__ = AsyncMock(side_effect=aiohttp.ServerDisconnectedError())
+        drop_cm.__aexit__ = AsyncMock(return_value=False)
+
+        call_count = 0
+
+        def _post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return ok_resp if call_count == 1 else drop_cm
+
+        session = AsyncMock()
+        session.post = _post
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}):
+            with patch("aiohttp.ClientSession", return_value=session):
+                resp = await record.handle_config_save(req)
+        assert resp.status == 200
+        saved = json.loads(cfg_path.read_text())
+        assert saved["base_url"] == "http://ha.local:8123"
 
     @pytest.mark.asyncio
     async def test_supervisor_error_falls_back_to_direct_write(self, tmp_path):
@@ -1116,13 +1161,15 @@ class TestHandleConfigSave:
         assert data["ok"] is False
 
     @pytest.mark.asyncio
-    async def test_success_with_connection_drop(self):
+    async def test_success_with_connection_drop(self, tmp_path):
         import json
 
         import aiohttp
 
         import record
 
+        cfg_path = tmp_path / "options.json"
+        cfg_path.write_text("{}")
         req = make_mocked_request("POST", "/config")
         req.read = AsyncMock(
             return_value=b'{"base_url":"http://ha.local:8123","token":"t","targets_json":""}'
@@ -1147,20 +1194,22 @@ class TestHandleConfigSave:
         session.post = _post
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
-        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok"}):
+        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}):
             with patch("aiohttp.ClientSession", return_value=session):
                 resp = await record.handle_config_save(req)
         data = json.loads(resp.body)
         assert data["ok"] is True
 
     @pytest.mark.asyncio
-    async def test_success_with_server_disconnected(self):
+    async def test_success_with_server_disconnected(self, tmp_path):
         import json
 
         import aiohttp
 
         import record
 
+        cfg_path = tmp_path / "options.json"
+        cfg_path.write_text("{}")
         req = make_mocked_request("POST", "/config")
         req.read = AsyncMock(
             return_value=b'{"base_url":"http://ha.local:8123","token":"t","targets_json":""}'
@@ -1185,18 +1234,20 @@ class TestHandleConfigSave:
         session.post = _post
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
-        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok"}):
+        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}):
             with patch("aiohttp.ClientSession", return_value=session):
                 resp = await record.handle_config_save(req)
         data = json.loads(resp.body)
         assert data["ok"] is True
 
     @pytest.mark.asyncio
-    async def test_unexpected_exception_returns_502(self):
+    async def test_unexpected_exception_returns_502(self, tmp_path):
         import json
 
         import record
 
+        cfg_path = tmp_path / "options.json"
+        cfg_path.write_text("{}")
         req = make_mocked_request("POST", "/config")
         req.read = AsyncMock(
             return_value=b'{"base_url":"http://ha.local:8123","token":"t","targets_json":""}'
@@ -1209,7 +1260,7 @@ class TestHandleConfigSave:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
         session.post = _boom
-        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok"}):
+        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}):
             with patch("aiohttp.ClientSession", return_value=session):
                 resp = await record.handle_config_save(req)
         assert resp.status == 502
