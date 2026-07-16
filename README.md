@@ -57,9 +57,9 @@ Once DashSnap is running — whether as an HA add-on or a standalone Docker cont
 
 ![Ingress config UI — edit form](assets/01_ingress_edit.png)
 
-### Via options.json (alternative)
+### Via options.json (Docker / devcontainer only)
 
-Prefer file-based config? Mount `options.json` and edit directly — useful for CI, devcontainers, or scripted setups.
+Prefer file-based config? Mount `options.json` and edit directly — useful for CI, devcontainers, or scripted Docker setups. **HA addon users: use the ingress UI instead** — the addon Options tab has been removed in favour of the UI.
 
 **PRIORITY RULE:** if `targets_json` is set, `base_url` and `token` are ignored entirely.
 
