@@ -848,15 +848,13 @@ class TestHandleConfigGet:
         grafana = next(t for t in data["targets"] if t["name"] == "grafana")
         assert grafana["auth"]["headers"]["Authorization"] == "***"
 
-    async def test_invalid_targets_json_still_includes_public(self, tmp_path):
+    async def test_invalid_targets_json_still_includes_public(self):
         import json
 
         import record
 
-        cfg = tmp_path / "options.json"
-        cfg.write_text(json.dumps({"targets_json": "not-valid-json"}))
         req = make_mocked_request("GET", "/config")
-        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+        with patch.object(record, "CFG", {"targets_json": "not-valid-json"}):
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
         assert any(t["name"] == "public" for t in data["targets"])
