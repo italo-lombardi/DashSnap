@@ -729,12 +729,11 @@ class TestHandleConfigGet:
         assert ha["auth"]["token"] == "***"
 
     @pytest.mark.asyncio
-    async def test_empty_token_stays_empty(self, tmp_path):
+    async def test_empty_token_stays_empty(self):
         import json
 
         import record
 
-        cfg = tmp_path / "options.json"
         targets = [
             {
                 "name": "ha",
@@ -742,9 +741,8 @@ class TestHandleConfigGet:
                 "auth": {"strategy": "ha_token", "token": ""},
             }
         ]
-        cfg.write_text(json.dumps({"targets": targets}))
         req = make_mocked_request("GET", "/config")
-        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+        with patch.object(record, "CFG", {"targets": targets}):
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
         ha = next(t for t in data["targets"] if t["name"] == "ha")
@@ -832,7 +830,7 @@ class TestHandleConfigGet:
         ha = next(t for t in data["targets"] if t["name"] == "ha")
         assert ha["auth"]["token"] == "***"
 
-    async def test_headers_masked_in_targets(self, tmp_path):
+    async def test_headers_masked_in_targets(self):
         import json
 
         import record
@@ -843,24 +841,20 @@ class TestHandleConfigGet:
                 "auth": {"strategy": "http_header", "headers": {"Authorization": "Bearer secret"}},
             }
         ]
-        cfg = tmp_path / "options.json"
-        cfg.write_text(json.dumps({"targets": targets}))
         req = make_mocked_request("GET", "/config")
-        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+        with patch.object(record, "CFG", {"targets": targets}):
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
         grafana = next(t for t in data["targets"] if t["name"] == "grafana")
         assert grafana["auth"]["headers"]["Authorization"] == "***"
 
-    async def test_invalid_targets_json_still_includes_public(self, tmp_path):
+    async def test_invalid_targets_json_still_includes_public(self):
         import json
 
         import record
 
-        cfg = tmp_path / "options.json"
-        cfg.write_text(json.dumps({"targets_json": "not-valid-json"}))
         req = make_mocked_request("GET", "/config")
-        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+        with patch.object(record, "CFG", {"targets_json": "not-valid-json"}):
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
         assert any(t["name"] == "public" for t in data["targets"])
@@ -890,7 +884,7 @@ class TestHandleConfigSave:
         req.read = AsyncMock(
             return_value=json.dumps({"targets_json": targets_with_public}).encode()
         )
-        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}, clear=True):
+        with patch.dict("os.environ", {"SHADOW_CONFIG_PATH": str(cfg)}, clear=True):
             resp = await record.handle_config_save(req)
         assert resp.status == 200
         saved = json.loads(cfg.read_text())
@@ -908,7 +902,7 @@ class TestHandleConfigSave:
         req.read = AsyncMock(
             return_value=b'{"base_url":"http://ha.local:8123","token":"t","targets_json":""}'
         )
-        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}, clear=True):
+        with patch.dict("os.environ", {"SHADOW_CONFIG_PATH": str(cfg)}, clear=True):
             resp = await record.handle_config_save(req)
         assert resp.status == 200
         data = json.loads(resp.body)
@@ -928,7 +922,7 @@ class TestHandleConfigSave:
             return_value=b'{"base_url":"http://ha.local:8123","token":"","targets_json":""}'
         )
         with patch.dict(
-            "os.environ", {"CONFIG_PATH": "/nonexistent/path/options.json"}, clear=True
+            "os.environ", {"SHADOW_CONFIG_PATH": "/nonexistent/path/options.json"}, clear=True
         ):
             resp = await record.handle_config_save(req)
         assert resp.status == 500
@@ -1005,7 +999,7 @@ class TestHandleConfigSave:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
         with patch.dict(
-            "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}
+            "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "SHADOW_CONFIG_PATH": str(cfg_path)}
         ):
             with patch("aiohttp.ClientSession", return_value=session):
                 resp = await record.handle_config_save(req)
@@ -1050,7 +1044,7 @@ class TestHandleConfigSave:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
         with patch.dict(
-            "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}
+            "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "SHADOW_CONFIG_PATH": str(cfg_path)}
         ):
             with patch("aiohttp.ClientSession", return_value=session):
                 resp = await record.handle_config_save(req)
@@ -1091,7 +1085,9 @@ class TestHandleConfigSave:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
         with (
-            patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}),
+            patch.dict(
+                "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "SHADOW_CONFIG_PATH": str(cfg_path)}
+            ),
             patch("aiohttp.ClientSession", return_value=session),
         ):
             resp = await record.handle_config_save(req)
@@ -1129,7 +1125,9 @@ class TestHandleConfigSave:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
         with (
-            patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}),
+            patch.dict(
+                "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "SHADOW_CONFIG_PATH": str(cfg_path)}
+            ),
             patch("aiohttp.ClientSession", return_value=session),
         ):
             resp = await record.handle_config_save(req)
@@ -1155,7 +1153,10 @@ class TestHandleConfigSave:
         with (
             patch.dict(
                 "os.environ",
-                {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": "/nonexistent/path/options.json"},
+                {
+                    "SUPERVISOR_TOKEN": "sup-tok",
+                    "SHADOW_CONFIG_PATH": "/nonexistent/path/options.json",
+                },
             ),
             patch("aiohttp.ClientSession", return_value=session),
         ):
@@ -1199,7 +1200,7 @@ class TestHandleConfigSave:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
         with patch.dict(
-            "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}
+            "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "SHADOW_CONFIG_PATH": str(cfg_path)}
         ):
             with patch("aiohttp.ClientSession", return_value=session):
                 resp = await record.handle_config_save(req)
@@ -1241,7 +1242,7 @@ class TestHandleConfigSave:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
         with patch.dict(
-            "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}
+            "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "SHADOW_CONFIG_PATH": str(cfg_path)}
         ):
             with patch("aiohttp.ClientSession", return_value=session):
                 resp = await record.handle_config_save(req)
@@ -1269,7 +1270,7 @@ class TestHandleConfigSave:
         session.__aexit__ = AsyncMock(return_value=False)
         session.post = _boom
         with patch.dict(
-            "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "CONFIG_PATH": str(cfg_path)}
+            "os.environ", {"SUPERVISOR_TOKEN": "sup-tok", "SHADOW_CONFIG_PATH": str(cfg_path)}
         ):
             with patch("aiohttp.ClientSession", return_value=session):
                 resp = await record.handle_config_save(req)
