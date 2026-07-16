@@ -891,9 +891,7 @@ async def handle_config_save(request):
 
 app = web.Application()
 app.router.add_get("/", handle_config_ui)
-app.router.add_get(
-    "/favicon.ico", lambda r: web.FileResponse(pathlib.Path(__file__).parent / "icon.png")
-)
+app.router.add_get("/favicon.ico", lambda r: web.FileResponse(pathlib.Path("/icon.png")))
 app.router.add_get("/config", handle_config_get)
 app.router.add_post("/config", handle_config_save)
 app.router.add_route("*", "/record", handle_record)
