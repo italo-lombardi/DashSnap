@@ -193,6 +193,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
     is_png = fmt == "png"
 
     def _safe(p: pathlib.Path) -> pathlib.Path:
+        # Path traversal guard: realpath + startswith(safe_root) blocks all escapes.
         resolved = pathlib.Path(os.path.realpath(p))
         if not str(resolved).startswith(str(safe_root) + os.sep):
             raise RuntimeError(f"path escapes OUT_DIR: {resolved}")
@@ -200,7 +201,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
 
     tmp_dir = _safe(OUT_DIR / f".tmp_{stamp}_{slug}")
     if not is_png:
-        tmp_dir.mkdir(exist_ok=True)
+        tmp_dir.mkdir(exist_ok=True)  # codeql[py/path-injection]
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
@@ -242,13 +243,13 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
             await ctx.close()
             await browser.close()
 
-    webms = list(tmp_dir.glob("*.webm"))
+    webms = list(tmp_dir.glob("*.webm"))  # codeql[py/path-injection]
     if not webms:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        shutil.rmtree(tmp_dir, ignore_errors=True)  # codeql[py/path-injection]
         raise RuntimeError("no video produced")
     final = _safe(OUT_DIR / f"{stamp}_{slug}.webm")
     webms[0].replace(final)
-    shutil.rmtree(tmp_dir, ignore_errors=True)
+    shutil.rmtree(tmp_dir, ignore_errors=True)  # codeql[py/path-injection]
     return str(final)
 
 
