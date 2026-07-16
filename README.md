@@ -46,7 +46,7 @@ curl http://localhost:8099/health
 
 ### Via the ingress UI (recommended)
 
-Once the add-on is running, open the **DashSnap** panel in the HA sidebar. You'll find a friendly configuration page to add, edit and delete targets without touching JSON.
+Once DashSnap is running — whether as an HA add-on or a standalone Docker container — open `http://<host>:8099` in your browser. You'll find a friendly configuration page to add, edit and delete targets without touching JSON.
 
 ![Ingress config UI — target list](assets/00_ingress_ui.png)
 
@@ -57,9 +57,9 @@ Once the add-on is running, open the **DashSnap** panel in the HA sidebar. You'l
 
 ![Ingress config UI — edit form](assets/01_ingress_edit.png)
 
-### Via Docker — options.json
+### Via options.json (alternative)
 
-For standalone Docker (no ingress UI), configure targets in `options.json`.
+Prefer file-based config? Mount `options.json` and edit directly — useful for CI, devcontainers, or scripted setups.
 
 **PRIORITY RULE:** if `targets_json` is set, `base_url` and `token` are ignored entirely.
 
