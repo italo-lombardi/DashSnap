@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [0.0.10] - 2026-07-16
+
+### Fixed
+- Config now survives addon restart — saved to `/data/dashsnap.json` which supervisor never overwrites (supervisor wipes `/data/options.json` on restart when schema is empty)
+
 ## [0.0.9] - 2026-07-16
 
 ### Fixed
