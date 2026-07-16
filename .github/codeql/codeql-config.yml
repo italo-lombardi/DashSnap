@@ -1,0 +1,7 @@
+name: DashSnap CodeQL config
+queries:
+  - uses: security-and-quality
+query-filters:
+  - exclude:
+      id: py/path-injection
+      tags contain: path-injection

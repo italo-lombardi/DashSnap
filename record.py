@@ -193,15 +193,17 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
     is_png = fmt == "png"
 
     def _safe(p: pathlib.Path) -> pathlib.Path:
-        # Path traversal guard: realpath + startswith(safe_root) blocks all escapes.
-        resolved = pathlib.Path(os.path.realpath(p))
-        if not str(resolved).startswith(str(safe_root) + os.sep):
-            raise RuntimeError(f"path escapes OUT_DIR: {resolved}")
+        # Path traversal guard: canonicalize and enforce containment in OUT_DIR.
+        resolved = p.resolve()
+        try:
+            resolved.relative_to(safe_root)
+        except ValueError as exc:
+            raise RuntimeError(f"path escapes OUT_DIR: {resolved}") from exc
         return resolved
 
     tmp_dir = _safe(OUT_DIR / f".tmp_{stamp}_{slug}")
     if not is_png:
-        tmp_dir.mkdir(exist_ok=True)  # codeql[py/path-injection]
+        tmp_dir.mkdir(exist_ok=True)
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
@@ -245,9 +247,9 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
             await ctx.close()
             await browser.close()
 
-    webms = list(tmp_dir.glob("*.webm"))  # codeql[py/path-injection]
+    webms = list(tmp_dir.glob("*.webm"))
     if not webms:
-        shutil.rmtree(tmp_dir, ignore_errors=True)  # codeql[py/path-injection]
+        shutil.rmtree(tmp_dir, ignore_errors=True)
         raise RuntimeError("no video produced")
     raw = webms[0]
     final = _safe(OUT_DIR / f"{stamp}_{slug}.webm")
@@ -269,14 +271,14 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
                 stderr=asyncio.subprocess.DEVNULL,
             )
             await proc.wait()
-            if proc.returncode != 0 or not final.exists():  # codeql[py/path-injection]
+            if proc.returncode != 0 or not final.exists():
                 raise RuntimeError(f"ffmpeg trim failed (exit {proc.returncode})")
             raw.unlink(missing_ok=True)
         finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)  # codeql[py/path-injection]
+            shutil.rmtree(tmp_dir, ignore_errors=True)
     else:
-        raw.replace(final)  # codeql[py/path-injection]
-        shutil.rmtree(tmp_dir, ignore_errors=True)  # codeql[py/path-injection]
+        raw.replace(final)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
     return str(final)
 
 
