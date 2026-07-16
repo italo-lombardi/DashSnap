@@ -15,7 +15,7 @@ Record or screenshot any web page via headless Chromium — Home Assistant dashb
 
 ## What it does
 
-DashSnap runs a small HTTP API server (port 8099). You call it with a URL or HA path and it records a `.webm` video or takes a `.png` screenshot using a headless Chromium browser. It handles authentication automatically — HA token injection, HTTP header auth (Grafana, Kibana), or no auth for public pages.
+DashSnap runs a small HTTP API server (port 8099). You call it with a URL or HA path and it records a `.webm` video or takes a `.png` screenshot using a headless Chromium browser. It handles authentication automatically — HA token injection, HTTP header auth (Grafana, Kibana, Prometheus, or any tool secured with an API key or Bearer token), or no auth for public pages and local-network services.
 
 A built-in **`public` target** is always available — no configuration needed to record any public URL.
 
@@ -98,8 +98,8 @@ Set `targets_json` to a JSON array of targets:
 | Strategy | Use for | `base_url` required |
 |---|---|---|
 | `ha_token` | Home Assistant | Yes |
-| `http_header` | Grafana, Kibana, any API-key app | No |
-| `none` | Public pages, LAN-only dashboards | No |
+| `http_header` | Any tool secured with an API key or Bearer token (Grafana, Kibana, Prometheus, custom dashboards, LAN services) — pass any headers you need | No |
+| `none` | Public pages, LAN-only dashboards, local IP addresses | No |
 
 #### Mount
 
@@ -200,4 +200,13 @@ data:
 
 ## Sibling projects
 
-- **[DashSnap Integration](https://github.com/italo-lombardi/DashSnap-Integration)** — HA custom integration to trigger DashSnap from automations and scripts
+Other Home Assistant integrations by the same author:
+
+| Integration | Description |
+|---|---|
+| [DashSnap Integration](https://github.com/italo-lombardi/DashSnap-Integration) | HA custom integration to trigger DashSnap from automations and scripts |
+| [Entity Availability](https://github.com/italo-lombardi/Home-Assistant-EntityAvailability) | Monitors HA entity availability by group — tracks offline, degraded, suppression, and availability % over time windows |
+| [Entity Guard](https://github.com/italo-lombardi/Home-Assistant-EntityGuard) | Enforces entity state via declarative rules — replaces hand-written auto-off, auto-lock, and kill-switch automations |
+| [Entity Distance](https://github.com/italo-lombardi/Home-Assistant-EntityDistance) | Tracks distance between 2–5 HA entities (persons, devices, zones) — direction, speed, ETA, proximity, group sensors |
+| [Fuel Compare](https://github.com/italo-lombardi/Home-Assistant-FuelCompare) | Tracks live fuel prices from fuelcompare.ie |
+| [WashWise](https://github.com/italo-lombardi/Home-Assistant-WashWise) | Decide whether to wash your car, bike, or solar panels based on the weather forecast — verdict, score, and per-day breakdown |
