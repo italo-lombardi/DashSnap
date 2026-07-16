@@ -575,6 +575,43 @@ class TestConfigShim:
             with pytest.raises(SystemExit):
                 record._load_config()
 
+    def test_load_config_shadow_path_overrides_base(self, tmp_path):
+        """SHADOW_CONFIG_PATH env var is read and shadow values win over base config."""
+        import json
+
+        import record
+
+        base = tmp_path / "options.json"
+        shadow = tmp_path / "dashsnap.json"
+        base.write_text(
+            json.dumps(
+                {
+                    "targets": [
+                        {"name": "base", "base_url": "http://base", "auth": {"strategy": "none"}}
+                    ]
+                }
+            )
+        )
+        shadow.write_text(
+            json.dumps(
+                {
+                    "targets": [
+                        {
+                            "name": "shadow",
+                            "base_url": "http://shadow",
+                            "auth": {"strategy": "none"},
+                        }
+                    ]
+                }
+            )
+        )
+        with patch.dict(
+            "os.environ", {"CONFIG_PATH": str(base), "SHADOW_CONFIG_PATH": str(shadow)}
+        ):
+            record._load_config()
+        assert "shadow" in record.TARGETS
+        assert "base" not in record.TARGETS
+
 
 # ---------------------------------------------------------------------------
 # _check_target_health
@@ -702,12 +739,11 @@ class TestHandleConfigUi:
 
 class TestHandleConfigGet:
     @pytest.mark.asyncio
-    async def test_returns_options_from_file(self, tmp_path):
+    async def test_returns_options_from_file(self):
         import json
 
         import record
 
-        cfg = tmp_path / "options.json"
         targets = [
             {
                 "name": "ha",
@@ -715,9 +751,8 @@ class TestHandleConfigGet:
                 "auth": {"strategy": "ha_token", "token": "tok"},
             }
         ]
-        cfg.write_text(json.dumps({"targets": targets}))
         req = make_mocked_request("GET", "/config")
-        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+        with patch.object(record, "CFG", {"targets": targets}):
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
         assert data["ok"] is True
@@ -749,13 +784,13 @@ class TestHandleConfigGet:
         assert ha["auth"]["token"] == ""
 
     @pytest.mark.asyncio
-    async def test_missing_file_returns_empty(self, tmp_path):
+    async def test_missing_file_returns_empty(self):
         import json
 
         import record
 
         req = make_mocked_request("GET", "/config")
-        with patch.dict("os.environ", {"CONFIG_PATH": str(tmp_path / "missing.json")}):
+        with patch.object(record, "CFG", {}):
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
         assert data["ok"] is True
@@ -763,21 +798,19 @@ class TestHandleConfigGet:
         assert any(t["name"] == "public" for t in data["targets"])
 
     @pytest.mark.asyncio
-    async def test_invalid_json_file_returns_empty(self, tmp_path):
+    async def test_invalid_json_file_returns_empty(self):
         import json
 
         import record
 
-        cfg = tmp_path / "options.json"
-        cfg.write_text("not-valid-json{{{")
         req = make_mocked_request("GET", "/config")
-        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+        with patch.object(record, "CFG", {}):
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
         assert data["ok"] is True
         assert isinstance(data["targets"], list)
 
-    async def test_targets_array_returned_as_native_list(self, tmp_path):
+    async def test_targets_array_returned_as_native_list(self):
         import json
 
         import record
@@ -785,10 +818,8 @@ class TestHandleConfigGet:
         targets = [
             {"name": "ha", "base_url": "http://ha.local:8123", "auth": {"strategy": "ha_token"}}
         ]
-        cfg = tmp_path / "options.json"
-        cfg.write_text(json.dumps({"targets": targets}))
         req = make_mocked_request("GET", "/config")
-        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+        with patch.object(record, "CFG", {"targets": targets}):
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
         assert isinstance(data["targets"], list)
@@ -796,20 +827,18 @@ class TestHandleConfigGet:
         assert "ha" in names
         assert "public" in names
 
-    async def test_public_target_always_first(self, tmp_path):
+    async def test_public_target_always_first(self):
         import json
 
         import record
 
-        cfg = tmp_path / "options.json"
-        cfg.write_text(json.dumps({}))
         req = make_mocked_request("GET", "/config")
-        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+        with patch.object(record, "CFG", {}):
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
         assert data["targets"][0]["name"] == "public"
 
-    async def test_token_masked_in_targets(self, tmp_path):
+    async def test_token_masked_in_targets(self):
         import json
 
         import record
@@ -821,10 +850,8 @@ class TestHandleConfigGet:
                 "auth": {"strategy": "ha_token", "token": "secret"},
             }
         ]
-        cfg = tmp_path / "options.json"
-        cfg.write_text(json.dumps({"targets": targets}))
         req = make_mocked_request("GET", "/config")
-        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+        with patch.object(record, "CFG", {"targets": targets}):
             resp = await record.handle_config_get(req)
         data = json.loads(resp.body)
         ha = next(t for t in data["targets"] if t["name"] == "ha")
