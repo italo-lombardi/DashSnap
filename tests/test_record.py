@@ -109,7 +109,14 @@ class TestParams:
     def test_delay_capped_at_60(self):
         import record
 
-        assert record._params({"delay": "999"})["delay"] == 60
+        # delay=999 with seconds=3600 → capped at 60 (60 < 3600-1=3599)
+        assert record._params({"delay": "999", "seconds": "3600"})["delay"] == 60
+
+    def test_delay_capped_to_seconds_minus_one(self):
+        import record
+
+        # delay=60 with seconds=10 → capped to 9 (seconds-1)
+        assert record._params({"delay": "60", "seconds": "10"})["delay"] == 9
 
     def test_delay_negative_clamped_to_zero(self):
         import record

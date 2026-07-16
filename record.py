@@ -252,28 +252,31 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
     raw = webms[0]
     final = _safe(OUT_DIR / f"{stamp}_{slug}.webm")
     if delay:
-        proc = await asyncio.create_subprocess_exec(
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(raw),
-            "-ss",
-            str(delay),
-            "-t",
-            str(seconds),
-            "-c",
-            "copy",
-            str(final),
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        await proc.wait()
-        raw.unlink(missing_ok=True)
-        if not final.exists():  # codeql[py/path-injection]
-            raise RuntimeError("ffmpeg trim failed")
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(raw),
+                "-ss",
+                str(delay),
+                "-t",
+                str(seconds),
+                "-c",
+                "copy",
+                str(final),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await proc.wait()
+            if proc.returncode != 0 or not final.exists():  # codeql[py/path-injection]
+                raise RuntimeError(f"ffmpeg trim failed (exit {proc.returncode})")
+            raw.unlink(missing_ok=True)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)  # codeql[py/path-injection]
     else:
         raw.replace(final)  # codeql[py/path-injection]
-    shutil.rmtree(tmp_dir, ignore_errors=True)  # codeql[py/path-injection]
+        shutil.rmtree(tmp_dir, ignore_errors=True)  # codeql[py/path-injection]
     return str(final)
 
 
@@ -378,6 +381,7 @@ def _params(q):
         delay = min(int(q.get("delay", 0)), 60)
         if delay < 0:
             delay = 0
+        delay = min(delay, max(0, seconds - 1))
         return {
             "seconds": seconds,
             "vw": int(q.get("viewport_width", DEFAULTS["viewport_width"])),
