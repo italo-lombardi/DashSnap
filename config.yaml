@@ -8,6 +8,8 @@ arch:
   - amd64
 ingress: true
 ingress_port: 8099
+panel_icon: mdi:monitor-screenshot
+panel_title: DashSnap
 init: false
 boot: manual
 map:
