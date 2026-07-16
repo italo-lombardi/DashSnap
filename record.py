@@ -6,6 +6,7 @@ import pathlib
 import re
 import shutil
 import socket
+import uuid
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -190,6 +191,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
     _slug_raw = re.sub(r"[^a-zA-Z0-9]+", "_", _path)[:40].strip("_") or "page"
     _m = re.fullmatch(r"[a-zA-Z0-9_]{1,40}", _slug_raw)
     slug = _m.group(0) if _m else "page"  # taint ends: only fullmatch group used
+    token = uuid.uuid4().hex  # server-generated, never user-controlled — safe for paths
     is_png = fmt == "png"
 
     def _safe(p: pathlib.Path) -> pathlib.Path:
@@ -201,7 +203,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
             raise RuntimeError(f"path escapes OUT_DIR: {resolved}") from exc
         return resolved
 
-    tmp_dir = _safe(OUT_DIR / f".tmp_{stamp}_{slug}")
+    tmp_dir = _safe(OUT_DIR / f".tmp_{stamp}_{token}")
     if not is_png:
         tmp_dir.mkdir(exist_ok=True)
 
