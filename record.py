@@ -441,7 +441,7 @@ async def handle_record_ha(request):
 async def handle_health(request):
     results = await asyncio.gather(*[_check_target_health(t) for t in TARGETS.values()])
     ok = all(r["ok"] for r in results)
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     ips = await loop.run_in_executor(None, _self_ips)
     self_urls = [f"http://{ip}:{_PORT}" for ip in ips]
     return web.json_response({"ok": ok, "targets": list(results), "self_urls": self_urls})

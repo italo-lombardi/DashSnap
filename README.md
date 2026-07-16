@@ -151,6 +151,16 @@ Same parameters as `/record/ha` but with `url` (required, absolute) instead of `
 curl http://localhost:8099/health
 ```
 
+Response includes `self_urls` — the addon's own reachable addresses. The HA integration uses this to auto-detect the correct internal URL. If autodetect fails, copy the first entry from `self_urls` into the integration config.
+
+```json
+{
+  "ok": true,
+  "targets": [...],
+  "self_urls": ["http://172.30.33.12:8099"]
+}
+```
+
 ### `GET /targets` — List configured targets
 
 ```bash
