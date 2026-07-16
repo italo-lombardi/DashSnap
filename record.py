@@ -5,6 +5,7 @@ import os
 import pathlib
 import re
 import shutil
+import socket
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -424,7 +425,16 @@ async def handle_record_ha(request):
 async def handle_health(request):
     results = await asyncio.gather(*[_check_target_health(t) for t in TARGETS.values()])
     ok = all(r["ok"] for r in results)
-    return web.json_response({"ok": ok, "targets": list(results)})
+    port = int(os.environ.get("INGRESS_PORT", 8099))
+    try:
+        self_ips = sorted({
+            a[4][0] for a in socket.getaddrinfo(socket.gethostname(), None)
+            if ':' not in a[4][0] and not a[4][0].startswith('127.')
+        })
+        self_urls = [f"http://{ip}:{port}" for ip in self_ips]
+    except Exception:
+        self_urls = []
+    return web.json_response({"ok": ok, "targets": list(results), "self_urls": self_urls})
 
 
 async def handle_targets(request):
@@ -855,4 +865,13 @@ if __name__ == "__main__":
     log.info("DashSnap starting on port %d", port)
     log.info("Configured targets: %s", list(TARGETS.keys()) if TARGETS else "none")
     log.info("Default target: %s", DEFAULT_TARGET)
+    try:
+        _addrs = sorted({
+            a[4][0] for a in socket.getaddrinfo(socket.gethostname(), None)
+            if ':' not in a[4][0] and not a[4][0].startswith('127.')
+        })
+        if _addrs:
+            log.info("DashSnap reachable from HA at: %s", [f"http://{ip}:{port}" for ip in _addrs])
+    except Exception:
+        pass
     web.run_app(app, host="0.0.0.0", port=port, access_log=logging.getLogger("aiohttp.access"))
