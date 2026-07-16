@@ -897,7 +897,7 @@ async def handle_config_save(request):
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as r:
                 pass  # pragma: no cover — best-effort, connection drops on restart
-    except aiohttp.ClientConnectionError:
+    except (aiohttp.ClientConnectionError, aiohttp.ServerDisconnectedError):
         pass  # expected — addon restarted mid-request
     except Exception as e:
         log.error("config save failed: %s", e)

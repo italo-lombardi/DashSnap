@@ -1154,6 +1154,44 @@ class TestHandleConfigSave:
         assert data["ok"] is True
 
     @pytest.mark.asyncio
+    async def test_success_with_server_disconnected(self):
+        import json
+
+        import aiohttp
+
+        import record
+
+        req = make_mocked_request("POST", "/config")
+        req.read = AsyncMock(
+            return_value=b'{"base_url":"http://ha.local:8123","token":"t","targets_json":""}'
+        )
+        ok_resp = AsyncMock()
+        ok_resp.status = 200
+        ok_resp.__aenter__ = AsyncMock(return_value=ok_resp)
+        ok_resp.__aexit__ = AsyncMock(return_value=False)
+
+        drop_cm = AsyncMock()
+        drop_cm.__aenter__ = AsyncMock(side_effect=aiohttp.ServerDisconnectedError())
+        drop_cm.__aexit__ = AsyncMock(return_value=False)
+
+        call_count = 0
+
+        def _post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return ok_resp if call_count == 1 else drop_cm
+
+        session = AsyncMock()
+        session.post = _post
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "sup-tok"}):
+            with patch("aiohttp.ClientSession", return_value=session):
+                resp = await record.handle_config_save(req)
+        data = json.loads(resp.body)
+        assert data["ok"] is True
+
+    @pytest.mark.asyncio
     async def test_unexpected_exception_returns_502(self):
         import json
 

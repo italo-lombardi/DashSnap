@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [0.0.9] - 2026-07-16
+
+### Fixed
+- Config save no longer returns 502 when addon restarts mid-request after a successful save — `ServerDisconnectedError` on restart is now treated as success (same as `ClientConnectionError`)
+
 ## [0.0.8] - 2026-07-16
 
 ### Added
