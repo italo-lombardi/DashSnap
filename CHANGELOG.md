@@ -2,7 +2,7 @@
 
 All notable changes to DashSnap.
 
-## [0.0.7] - 2026-07-16
+## [0.0.8] - 2026-07-16
 
 ### Added
 - Record any web page as `.webm` video or `.png` screenshot via headless Chromium
@@ -15,6 +15,18 @@ All notable changes to DashSnap.
 - **Ingress UI** — visual target editor with masked tokens, available at port 8099 in both HA addon and Docker
 - **Three auth strategies**: `ha_token` (HA token injection), `http_header` (Grafana, Kibana, any API-key service), `none` (public/LAN pages)
 - Recording filenames include timestamp + URL slug: `20260716_120000_lovelace_0.png`
-- `delay` parameter settles the page before recording begins — video duration equals `seconds` exactly
 - Sidebar icon (`mdi:monitor-screenshot`) in HA left menu
 - `self_urls` in `/health` response — HA integration uses this to auto-detect the correct internal addon address
+- `delay` parameter settles the page before recording begins — video duration equals `seconds` exactly
+- Favicon served at `/favicon.ico`
+
+### Changed
+- **HA addon Options panel removed** — configure exclusively via the ingress UI (masked tokens, visual editor)
+- `options.json` config path for Docker/devcontainer users only
+
+### Fixed
+- Config save works correctly after options schema removal — supervisor fallback writes `options.json` directly when supervisor rejects the options POST
+
+---
+
+For earlier versions see the [release history](https://github.com/italo-lombardi/DashSnap/releases).
