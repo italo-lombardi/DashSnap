@@ -205,18 +205,12 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
-        ctx_kwargs = {"viewport": {"width": vw, "height": vh}}
-        if not is_png:
-            ctx_kwargs["record_video_dir"] = str(tmp_dir)
-            ctx_kwargs["record_video_size"] = {"width": vw, "height": vh}
-        ctx = await browser.new_context(**ctx_kwargs)
-        page = await ctx.new_page()
-        try:
+
+        async def _load_and_auth(ctx):
+            page = await ctx.new_page()
             if is_ha_url or strategy not in ("ha_token", "none"):
                 await apply_auth(ctx, page, auth_cfg, base_url)
-
             await page.goto(url, wait_until="networkidle")
-
             if is_ha_url:
                 try:
                     await page.wait_for_selector("home-assistant", timeout=15000)
@@ -229,13 +223,33 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
                         "not authenticated after token inject — frontend did not render. "
                         "Token invalid, or HA auth store shape changed."
                     )
+            return page
 
-            if delay:
-                await page.wait_for_timeout(delay * 1000)
+        # For webm with delay: settle in a non-recording context, then record clean.
+        # For png or no delay: single context is fine.
+        if not is_png and delay:
+            settle_ctx = await browser.new_context(viewport={"width": vw, "height": vh})
+            try:
+                settle_page = await _load_and_auth(settle_ctx)
+                await settle_page.wait_for_timeout(delay * 1000)
+            finally:
+                await settle_ctx.close()
+
+        ctx_kwargs = {"viewport": {"width": vw, "height": vh}}
+        if not is_png:
+            ctx_kwargs["record_video_dir"] = str(tmp_dir)
+            ctx_kwargs["record_video_size"] = {"width": vw, "height": vh}
+        ctx = await browser.new_context(**ctx_kwargs)
+        try:
+            page = await _load_and_auth(ctx)
 
             if is_png:
+                if delay:
+                    await page.wait_for_timeout(delay * 1000)
                 final = _safe(OUT_DIR / f"{stamp}_{slug}.png")
                 await page.screenshot(path=str(final))
+                await ctx.close()
+                await browser.close()
                 return str(final)
 
             await page.wait_for_timeout(seconds * 1000)
