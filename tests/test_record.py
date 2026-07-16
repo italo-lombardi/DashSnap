@@ -605,6 +605,7 @@ class TestConfigShim:
                 }
             )
         )
+        original_targets = dict(record.TARGETS)
         with patch.dict(
             "os.environ", {"CONFIG_PATH": str(base), "SHADOW_CONFIG_PATH": str(shadow)}
         ):
@@ -613,7 +614,7 @@ class TestConfigShim:
             assert "shadow" in record.TARGETS
             assert "base" not in record.TARGETS
         finally:
-            record._load_config()  # restore globals from real env
+            record.TARGETS = original_targets
 
 
 # ---------------------------------------------------------------------------
