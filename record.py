@@ -13,6 +13,22 @@ import aiohttp
 from aiohttp import web
 from playwright.async_api import async_playwright
 
+_PORT = int(os.environ.get("INGRESS_PORT", 8099))
+
+
+def _self_ips() -> list[str]:
+    try:
+        return sorted(
+            {
+                a[4][0]
+                for a in socket.getaddrinfo(socket.gethostname(), None)
+                if a[0] == socket.AF_INET and not a[4][0].startswith("127.")
+            }
+        )
+    except OSError:
+        return []
+
+
 # ---------------------------------------------------------------------------
 # Config load + env var overlay + backward-compat shim
 # ---------------------------------------------------------------------------
@@ -425,18 +441,9 @@ async def handle_record_ha(request):
 async def handle_health(request):
     results = await asyncio.gather(*[_check_target_health(t) for t in TARGETS.values()])
     ok = all(r["ok"] for r in results)
-    port = int(os.environ.get("INGRESS_PORT", 8099))
-    try:
-        self_ips = sorted(
-            {
-                a[4][0]
-                for a in socket.getaddrinfo(socket.gethostname(), None)
-                if ":" not in a[4][0] and not a[4][0].startswith("127.")
-            }
-        )
-        self_urls = [f"http://{ip}:{port}" for ip in self_ips]
-    except Exception:
-        self_urls = []
+    loop = asyncio.get_event_loop()
+    ips = await loop.run_in_executor(None, _self_ips)
+    self_urls = [f"http://{ip}:{_PORT}" for ip in ips]
     return web.json_response({"ok": ok, "targets": list(results), "self_urls": self_urls})
 
 
@@ -864,20 +871,12 @@ app.router.add_get("/ha/dashboards", handle_ha_dashboards)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    port = int(os.environ.get("INGRESS_PORT", 8099))
-    log.info("DashSnap starting on port %d", port)
+    log.info("DashSnap starting on port %d", _PORT)
     log.info("Configured targets: %s", list(TARGETS.keys()) if TARGETS else "none")
     log.info("Default target: %s", DEFAULT_TARGET)
-    try:
-        _addrs = sorted(
-            {
-                a[4][0]
-                for a in socket.getaddrinfo(socket.gethostname(), None)
-                if ":" not in a[4][0] and not a[4][0].startswith("127.")
-            }
+    _addrs = _self_ips()
+    if _addrs:
+        log.info(
+            "DashSnap reachable from HA at: %s", ", ".join(f"http://{ip}:{_PORT}" for ip in _addrs)
         )
-        if _addrs:
-            log.info("DashSnap reachable from HA at: %s", [f"http://{ip}:{port}" for ip in _addrs])
-    except Exception:
-        pass
-    web.run_app(app, host="0.0.0.0", port=port, access_log=logging.getLogger("aiohttp.access"))
+    web.run_app(app, host="0.0.0.0", port=_PORT, access_log=logging.getLogger("aiohttp.access"))
