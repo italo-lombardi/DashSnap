@@ -356,6 +356,9 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
             start_ts = None  # real CDP timestamp of frame 0, or None = index-mode
             use_ts = None  # clock mode pinned on the first frame, never mixed
             captured = []  # (raw_b64, elapsed) buffered in RAM during capture
+            # ponytail: captured holds seconds*fps frames in RAM (~40-90MB for a
+            # 15s clip); fine for the 5-60s target. Stream to disk off-loop if
+            # long recordings ever land here.
             acks = []  # in-flight ack tasks — drained before detach
 
             def _on_frame(params):
