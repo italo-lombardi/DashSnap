@@ -2,6 +2,17 @@
 
 All notable changes to DashSnap.
 
+## [0.1.5] - 2026-07-20
+
+### Changed
+- **Recording now captures via CDP screencast instead of Playwright `record_video`.** The `delay` is a true pre-roll wait on the same warm page (live cameras load during it and stay live), then exactly `seconds` of frames are captured and muxed to VP8 webm with real per-frame timestamps. Output duration is now exactly `seconds`.
+
+### Fixed
+- **`delay` no longer leaks the settle period into the recording.** `record_video` collapses idle wall-time (the settle, when live cameras show a spinner) into a few frames, so the old record-everything-then-trim could not cut the settle off accurately — the loading period stayed in the output. Capturing only after the settle removes it entirely.
+
+### Added
+- Startup log prints the running version (`DashSnap <version> starting on port ...`) via Supervisor's `BUILD_VERSION` build-arg.
+
 ## [0.1.4] - 2026-07-20
 
 ### Fixed
