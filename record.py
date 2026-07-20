@@ -84,6 +84,38 @@ log = logging.getLogger("dashsnap")
 
 OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/DashSnap"))
 
+# System chromium built with H264 (Debian) — needed for live camera streams
+# (Nest WebRTC requires H264, which Playwright's bundled Chromium lacks).
+# Unset (e.g. local dev / tests) falls back to Playwright's bundled browser.
+CHROMIUM_PATH = os.environ.get("CHROMIUM_PATH") or None
+
+
+def _trim_args(raw, final, delay, seconds):
+    """ffmpeg argv to trim a Playwright webm to the settled window.
+
+    Must re-encode (libvpx): Playwright's VP8 webm has a single keyframe at the
+    start, so `-c copy` can't cut at an arbitrary offset — it emits the whole
+    clip (or, with input-side -ss, an empty file). This is the bug that
+    regressed twice (509-byte files, then wrong-length files); the test on this
+    function's output guards the arg order.
+    """
+    return [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(raw),
+        "-ss",
+        str(delay),
+        "-t",
+        str(seconds),
+        "-c:v",
+        "libvpx",
+        "-b:v",
+        "1M",
+        str(final),
+    ]
+
+
 DEFAULTS = {
     "seconds": 30,
     "viewport_width": 1920,
@@ -218,7 +250,9 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
         tmp_dir.mkdir(exist_ok=True)
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
+        browser = await p.chromium.launch(
+            executable_path=CHROMIUM_PATH, args=["--no-sandbox", "--disable-dev-shm-usage"]
+        )
         ctx_kwargs = {"viewport": {"width": vw, "height": vh}}
         if not is_png:
             ctx_kwargs["record_video_dir"] = str(tmp_dir)
@@ -229,7 +263,17 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
             if is_ha_url or strategy not in ("ha_token", "none"):
                 await apply_auth(ctx, page, auth_cfg, base_url)
 
-            await page.goto(url, wait_until="networkidle")
+            # "domcontentloaded" not "networkidle": live camera/media streams
+            # (e.g. Nest WebRTC) keep the network busy forever, so a bare
+            # networkidle would time out and abort the recording. Load the DOM,
+            # then wait for network quiet only up to 10s — enough for a normal
+            # dashboard to settle, but a live stream just hits the cap and we
+            # record anyway. The `delay` param adds extra settle on top.
+            await page.goto(url, wait_until="domcontentloaded")
+            try:
+                await page.wait_for_load_state("networkidle", timeout=10000)
+            except Exception:  # noqa: BLE001, SIM105
+                pass  # live stream never idles — record what rendered so far
 
             if is_ha_url:
                 try:
@@ -268,17 +312,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
     if delay:
         try:
             proc = await asyncio.create_subprocess_exec(
-                "ffmpeg",
-                "-y",
-                "-i",
-                str(raw),
-                "-ss",
-                str(delay),
-                "-t",
-                str(seconds),
-                "-c",
-                "copy",
-                str(final),
+                *_trim_args(raw, final, delay, seconds),
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
             )
