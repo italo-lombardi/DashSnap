@@ -1309,3 +1309,30 @@ class TestHandleConfigSave:
         data = json.loads(resp.body)
         assert data["ok"] is False
         assert "boom" in data["error"]
+
+
+class TestTrimArgs:
+    """Guards the ffmpeg trim arg order — this bug regressed twice: output-side
+    -ss with -c copy on Playwright's single-keyframe VP8 webm produced first
+    empty (509-byte) files, then wrong-length files. Must re-encode with -ss/-t.
+    """
+
+    def test_reencodes_with_ss_and_t(self):
+        import record
+
+        args = record._trim_args("/tmp/raw.webm", "/tmp/out.webm", delay=5, seconds=3)
+
+        # Re-encode, not -c copy (copy can't cut sparse-keyframe VP8).
+        assert "-c:v" in args and args[args.index("-c:v") + 1] == "libvpx"
+        assert "copy" not in args
+
+        # -ss=delay and -t=seconds present with correct values.
+        assert args[args.index("-ss") + 1] == "5"
+        assert args[args.index("-t") + 1] == "3"
+
+        # -ss/-t are output options here: they must come AFTER the input (-i).
+        assert args.index("-i") < args.index("-ss") < args.index("-t")
+
+        # raw is the input, final is the last (output) arg.
+        assert args[args.index("-i") + 1] == "/tmp/raw.webm"
+        assert args[-1] == "/tmp/out.webm"

@@ -89,6 +89,33 @@ OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/DashSnap"))
 # Unset (e.g. local dev / tests) falls back to Playwright's bundled browser.
 CHROMIUM_PATH = os.environ.get("CHROMIUM_PATH") or None
 
+
+def _trim_args(raw, final, delay, seconds):
+    """ffmpeg argv to trim a Playwright webm to the settled window.
+
+    Must re-encode (libvpx): Playwright's VP8 webm has a single keyframe at the
+    start, so `-c copy` can't cut at an arbitrary offset — it emits the whole
+    clip (or, with input-side -ss, an empty file). This is the bug that
+    regressed twice (509-byte files, then wrong-length files); the test on this
+    function's output guards the arg order.
+    """
+    return [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(raw),
+        "-ss",
+        str(delay),
+        "-t",
+        str(seconds),
+        "-c:v",
+        "libvpx",
+        "-b:v",
+        "1M",
+        str(final),
+    ]
+
+
 DEFAULTS = {
     "seconds": 30,
     "viewport_width": 1920,
@@ -285,24 +312,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
     if delay:
         try:
             proc = await asyncio.create_subprocess_exec(
-                "ffmpeg",
-                "-y",
-                "-i",
-                str(raw),
-                # Drop the settle period and keep `seconds` of settled content.
-                # Must re-encode: Playwright's VP8 webm has a single keyframe at
-                # the start, so `-c copy` cannot cut at an arbitrary offset — it
-                # silently emits the whole clip (or, with input-seek, an empty
-                # file). libvpx re-encode trims to the exact requested window.
-                "-ss",
-                str(delay),
-                "-t",
-                str(seconds),
-                "-c:v",
-                "libvpx",
-                "-b:v",
-                "1M",
-                str(final),
+                *_trim_args(raw, final, delay, seconds),
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
             )
