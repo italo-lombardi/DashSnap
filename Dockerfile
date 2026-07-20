@@ -4,7 +4,7 @@
 # Linux build — so live camera streams (e.g. Nest WebRTC, which requires
 # H264) only render in the Debian chromium. We drive it via executable_path.
 # tzdata: without a zoneinfo db, TZ can't resolve and filenames stay UTC.
-ARG BUILD_FROM=debian:bookworm-slim
+ARG BUILD_FROM=docker.io/library/debian:bookworm-slim
 FROM ${BUILD_FROM}
 
 RUN apt-get update \
