@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -90,28 +91,35 @@ OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/DashSnap"))
 CHROMIUM_PATH = os.environ.get("CHROMIUM_PATH") or None
 
 
-def _trim_args(raw, final, delay, seconds):
-    """ffmpeg argv to trim a Playwright webm to the settled window.
+def _encode_args(list_file, final, seconds, fps=25):
+    """ffmpeg argv to assemble CDP screencast JPEG frames into a VP8 webm.
 
-    Must re-encode (libvpx): Playwright's VP8 webm has a single keyframe at the
-    start, so `-c copy` can't cut at an arbitrary offset — it emits the whole
-    clip (or, with input-side -ss, an empty file). This is the bug that
-    regressed twice (509-byte files, then wrong-length files); the test on this
-    function's output guards the arg order.
+    The concat demuxer reads per-frame `duration` directives (real wall-clock
+    spacing from CDP frame timestamps), so idle stretches are held for their
+    true duration instead of collapsed. `-r fps` output CFR + `-t seconds`
+    guarantee the result is exactly `seconds` long. We assemble frames captured
+    *after* the settle, so `delay` is a pure pre-roll and never appears here —
+    this replaces the old record-everything-then-trim approach, which could not
+    work: Playwright's record_video collapses the idle settle to a few frames,
+    so there was no wall-accurate offset to trim at.
     """
     return [
         "ffmpeg",
         "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
         "-i",
-        str(raw),
-        "-ss",
-        str(delay),
-        "-t",
-        str(seconds),
+        str(list_file),
+        "-r",
+        str(fps),
         "-c:v",
         "libvpx",
         "-b:v",
         "1M",
+        "-t",
+        str(seconds),
         str(final),
     ]
 
@@ -253,27 +261,26 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
         browser = await p.chromium.launch(
             executable_path=CHROMIUM_PATH, args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
-        ctx_kwargs = {"viewport": {"width": vw, "height": vh}}
-        if not is_png:
-            ctx_kwargs["record_video_dir"] = str(tmp_dir)
-            ctx_kwargs["record_video_size"] = {"width": vw, "height": vh}
-        ctx = await browser.new_context(**ctx_kwargs)
+        # No record_video: Playwright's video collapses idle wall-time (the
+        # settle) into a few frames, so it's impossible to trim `delay` off it
+        # accurately. Instead we settle first, then capture exactly `seconds`
+        # via CDP screencast (below), which carries real per-frame timestamps.
+        ctx = await browser.new_context(viewport={"width": vw, "height": vh})
         page = await ctx.new_page()
+        frames = []  # (path, wall_clock_ts) captured after settle
         try:
             if is_ha_url or strategy not in ("ha_token", "none"):
                 await apply_auth(ctx, page, auth_cfg, base_url)
 
             # "domcontentloaded" not "networkidle": live camera/media streams
             # (e.g. Nest WebRTC) keep the network busy forever, so a bare
-            # networkidle would time out and abort the recording. Load the DOM,
-            # then wait for network quiet only up to 10s — enough for a normal
-            # dashboard to settle, but a live stream just hits the cap and we
-            # record anyway. The `delay` param adds extra settle on top.
+            # networkidle would time out. Load the DOM, then wait for network
+            # quiet only up to 10s; a live stream just hits the cap.
             await page.goto(url, wait_until="domcontentloaded")
             try:
                 await page.wait_for_load_state("networkidle", timeout=10000)
             except Exception:  # noqa: BLE001, SIM105
-                pass  # live stream never idles — record what rendered so far
+                pass  # live stream never idles — proceed
 
             if is_ha_url:
                 try:
@@ -288,42 +295,73 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
                         "Token invalid, or HA auth store shape changed."
                     )
 
+            # `delay` is a pure pre-roll on this same warm page: live cameras
+            # load during it and stay live into the capture below.
             if delay:
                 log.debug("settling %ds before recording %s", delay, url)
                 await page.wait_for_timeout(delay * 1000)
-                log.debug("settle complete, recording for %ds", seconds)
 
             if is_png:
                 final = _safe(OUT_DIR / f"{stamp}_{slug}.png")
                 await page.screenshot(path=str(final))
                 return str(final)
 
-            await page.wait_for_timeout(seconds * 1000)
+            # Capture exactly `seconds` of the warm page via CDP screencast.
+            session = await ctx.new_cdp_session(page)
+            start_ts = None
+
+            def _on_frame(params):
+                nonlocal start_ts
+                # Must ack every frame or Chromium halts the stream.
+                asyncio.create_task(
+                    session.send("Page.screencastFrameAck", {"sessionId": params["sessionId"]})
+                )
+                ts = params["metadata"]["timestamp"]  # monotonic wall-clock seconds
+                if start_ts is None:
+                    start_ts = ts
+                fp = tmp_dir / f"f{len(frames):06d}.jpg"
+                fp.write_bytes(base64.b64decode(params["data"]))
+                frames.append((fp, ts - start_ts))
+
+            session.on("Page.screencastFrame", _on_frame)
+            await session.send(
+                "Page.startScreencast",
+                {"format": "jpeg", "quality": 90, "maxWidth": vw, "maxHeight": vh},
+            )
+            await asyncio.sleep(seconds)
+            await session.send("Page.stopScreencast")
+            await session.detach()
         finally:
             await ctx.close()
             await browser.close()
 
-    webms = list(tmp_dir.glob("*.webm"))
-    if not webms:
+    if not frames:
         shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise RuntimeError("no video produced")
-    raw = webms[0]
+        raise RuntimeError("no frames captured")
+
+    # Build a concat list with real per-frame durations (wall-clock deltas), so
+    # the encoded timeline matches real time. Last frame re-listed — the concat
+    # demuxer ignores the final entry's duration otherwise.
     final = _safe(OUT_DIR / f"{stamp}_{slug}.webm")
-    if delay:
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *_trim_args(raw, final, delay, seconds),
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            await proc.wait()
-            if proc.returncode != 0 or not final.exists():
-                raise RuntimeError(f"ffmpeg trim failed (exit {proc.returncode})")
-            raw.unlink(missing_ok=True)
-        finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-    else:
-        raw.replace(final)
+    list_file = tmp_dir / "frames.txt"
+    lines = ["ffconcat version 1.0"]
+    for i, (fp, ts) in enumerate(frames):
+        dur = (frames[i + 1][1] - ts) if i + 1 < len(frames) else 0.04
+        lines.append(f"file {fp.name}")
+        lines.append(f"duration {max(dur, 0.001):.3f}")
+    lines.append(f"file {frames[-1][0].name}")
+    list_file.write_text("\n".join(lines))
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *_encode_args(list_file, final, seconds),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+        if proc.returncode != 0 or not final.exists():
+            raise RuntimeError(f"ffmpeg encode failed (exit {proc.returncode})")
+    finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
     return str(final)
 
