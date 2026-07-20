@@ -345,11 +345,14 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
 
             # Capture exactly `seconds` of the warm page via CDP screencast.
             session = await ctx.new_cdp_session(page)
-            start_ts = None
+            start_ts = None  # real CDP timestamp of frame 0, or None = index-mode
+            use_ts = None  # clock mode pinned on the first frame, never mixed
             acks = []  # in-flight ack tasks — drained before detach
+            # ponytail: acks grows to seconds*fps tasks; fine for 5-60s clips,
+            # bound it (drain in batches) if long recordings ever land here.
 
             def _on_frame(params):
-                nonlocal start_ts
+                nonlocal start_ts, use_ts
                 # Must ack every frame or Chromium halts the stream. Track the
                 # task so we can drain acks before detaching (an ack firing
                 # after detach() raises in an orphan task).
@@ -358,19 +361,28 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
                         session.send("Page.screencastFrameAck", {"sessionId": params["sessionId"]})
                     )
                 )
-                # timestamp is optional in the CDP metadata; fall back to frame
-                # index / fps so a frame without it doesn't KeyError.
-                ts = params.get("metadata", {}).get("timestamp")
-                if ts is None:
-                    base = start_ts if start_ts is not None else 0
-                    ts = base + len(frames) / _FPS
-                if start_ts is None:
-                    start_ts = ts
+                idx = len(frames)
+                raw_ts = params.get("metadata", {}).get("timestamp")
+                # Pin the clock on frame 0: if it carries a CDP timestamp we use
+                # wall-clock deltas for every frame; if not, we use index/fps for
+                # every frame. Never mix — a real ts (epoch seconds, ~1e5) minus a
+                # zero baseline would otherwise emit a ~1e5-second frame.
+                if idx == 0:
+                    use_ts = raw_ts is not None
+                    start_ts = raw_ts
+                elapsed = (raw_ts - start_ts) if (use_ts and raw_ts is not None) else idx / _FPS
                 # Filename is server-generated (`f<int>.jpg`); _safe() enforces
                 # OUT_DIR containment so CodeQL sees the sanitizer.
-                fp = _safe(tmp_dir / f"f{len(frames):06d}.jpg")
-                fp.write_bytes(base64.b64decode(params["data"]))
-                frames.append((fp, ts - start_ts))
+                fp = _safe(tmp_dir / f"f{idx:06d}.jpg")
+                try:
+                    fp.write_bytes(base64.b64decode(params["data"]))
+                except (OSError, ValueError) as e:
+                    # Sync handler runs inside Playwright's event dispatch, so a
+                    # raise here would die silently and drop the frame. Log and
+                    # skip so a partial capture is visible, not a mystery-short clip.
+                    log.warning("dropped screencast frame %d: %s", idx, e)
+                    return
+                frames.append((fp, elapsed))
 
             session.on("Page.screencastFrame", _on_frame)
             await session.send(
