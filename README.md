@@ -209,5 +209,5 @@ Other Home Assistant integrations by the same author:
 | [Entity Availability](https://github.com/italo-lombardi/Home-Assistant-EntityAvailability) | Monitors HA entity availability by group — tracks offline, degraded, suppression, and availability % over time windows |
 | [Entity Guard](https://github.com/italo-lombardi/Home-Assistant-EntityGuard) | Enforces entity state via declarative rules — replaces hand-written auto-off, auto-lock, and kill-switch automations |
 | [Entity Distance](https://github.com/italo-lombardi/Home-Assistant-EntityDistance) | Tracks distance between 2–5 HA entities (persons, devices, zones) — direction, speed, ETA, proximity, group sensors |
-| [Fuel Compare](https://github.com/italo-lombardi/Home-Assistant-FuelCompare) | Tracks live fuel prices from fuelcompare.ie |
+| [Fuel Compare](https://github.com/italo-lombardi/Home-Assistant-FuelCompare) | Tracks live fuel prices from 36 providers across 30 countries |
 | [WashWise](https://github.com/italo-lombardi/Home-Assistant-WashWise) | Decide whether to wash your car, bike, or solar panels based on the weather forecast — verdict, score, and per-day breakdown |
