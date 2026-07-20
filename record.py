@@ -355,21 +355,24 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
             session = await ctx.new_cdp_session(page)
             start_ts = None  # real CDP timestamp of frame 0, or None = index-mode
             use_ts = None  # clock mode pinned on the first frame, never mixed
+            captured = []  # (raw_b64, elapsed) buffered in RAM during capture
             acks = []  # in-flight ack tasks — drained before detach
-            # ponytail: acks grows to seconds*fps tasks; fine for 5-60s clips,
-            # bound it (drain in batches) if long recordings ever land here.
 
             def _on_frame(params):
                 nonlocal start_ts, use_ts
-                # Must ack every frame or Chromium halts the stream. Track the
-                # task so we can drain acks before detaching (an ack firing
-                # after detach() raises in an orphan task).
+                # This handler runs inside Playwright's event dispatch on the
+                # asyncio loop. Do NO blocking work here (no base64 decode, no
+                # disk write): with two live H264 cameras the per-frame decode +
+                # write saturated the loop, Chromium applied screencast
+                # backpressure and coalesced repaints, and one camera tile
+                # visibly froze mid-clip. Just ack + buffer the raw bytes; the
+                # decode/write happens after stopScreencast (below).
                 acks.append(
                     asyncio.create_task(
                         session.send("Page.screencastFrameAck", {"sessionId": params["sessionId"]})
                     )
                 )
-                idx = len(frames)
+                idx = len(captured)
                 raw_ts = params.get("metadata", {}).get("timestamp")
                 # Pin the clock on frame 0: if it carries a CDP timestamp we use
                 # wall-clock deltas for every frame; if not, we use index/fps for
@@ -379,18 +382,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
                     use_ts = raw_ts is not None
                     start_ts = raw_ts
                 elapsed = (raw_ts - start_ts) if (use_ts and raw_ts is not None) else idx / _FPS
-                # Filename is server-generated (`f<int>.jpg`); _safe() enforces
-                # OUT_DIR containment so CodeQL sees the sanitizer.
-                fp = _safe(tmp_dir / f"f{idx:06d}.jpg")
-                try:
-                    fp.write_bytes(base64.b64decode(params["data"]))
-                except (OSError, ValueError) as e:
-                    # Sync handler runs inside Playwright's event dispatch, so a
-                    # raise here would die silently and drop the frame. Log and
-                    # skip so a partial capture is visible, not a mystery-short clip.
-                    log.warning("dropped screencast frame %d: %s", idx, e)
-                    return
-                frames.append((fp, elapsed))
+                captured.append((params["data"], elapsed))
 
             session.on("Page.screencastFrame", _on_frame)
             await session.send(
@@ -403,6 +395,18 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
             if acks:
                 await asyncio.gather(*acks, return_exceptions=True)
             await session.detach()
+
+            # Now decode + write the buffered frames to disk (capture is over, so
+            # blocking here is free). Filename is server-generated (`f<int>.jpg`);
+            # _safe() enforces OUT_DIR containment so CodeQL sees the sanitizer.
+            for idx, (data, elapsed) in enumerate(captured):
+                fp = _safe(tmp_dir / f"f{idx:06d}.jpg")
+                try:
+                    fp.write_bytes(base64.b64decode(data))
+                except (OSError, ValueError) as e:
+                    log.warning("dropped screencast frame %d: %s", idx, e)
+                    continue
+                frames.append((fp, elapsed))
         finally:
             await ctx.close()
             await browser.close()

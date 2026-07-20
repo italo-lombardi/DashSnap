@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [0.1.7] - 2026-07-20
+
+### Fixed
+- **Live camera tiles no longer freeze mid-recording under multi-camera load.** The CDP screencast frame handler ran on the asyncio loop and did a base64 decode + disk write per frame; with two live H264 cameras that saturated the loop, Chromium applied screencast backpressure and coalesced repaints, and one camera tile visibly froze partway through the clip (the browser view was smooth). The handler now only acks + buffers raw bytes in RAM during capture; decode/write to disk happens after the capture window closes, so the hot path never blocks.
+
 ## [0.1.6] - 2026-07-20
 
 ### Fixed
