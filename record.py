@@ -242,11 +242,16 @@ AUTH_STRATEGIES = {
 
 
 def _safe_filename_component(value: str) -> str:
-    """Sanitize a URL-derived string into a safe filename slug (no path taint)."""
+    """Sanitize a URL-derived string into a safe filename slug (no path taint).
+
+    Taint ends at `.group(0)`: only the substring that fully matches the strict
+    `[a-zA-Z0-9_]` allowlist is ever returned, so no user-controlled character
+    can reach a path. (This exact fullmatch-group shape is what CodeQL accepts
+    as the sanitizer for py/path-injection.)
+    """
     candidate = re.sub(r"[^a-zA-Z0-9]+", "_", value)[:40].strip("_")
-    if re.fullmatch(r"[a-zA-Z0-9_]{1,40}", candidate):
-        return candidate
-    return "page"
+    m = re.fullmatch(r"[a-zA-Z0-9_]{1,40}", candidate)
+    return m.group(0) if m else "page"
 
 
 async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  # pragma: no cover
