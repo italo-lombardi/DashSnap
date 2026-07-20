@@ -287,18 +287,21 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
             proc = await asyncio.create_subprocess_exec(
                 "ffmpeg",
                 "-y",
-                # Input seek (-ss before -i): Playwright's VP8 webm has sparse
-                # keyframes, so an output-side -ss with -c copy seeks past all
-                # content and writes an empty file. Seeking on input trims to
-                # the nearest keyframe correctly without a re-encode.
-                "-ss",
-                str(delay),
                 "-i",
                 str(raw),
+                # Drop the settle period and keep `seconds` of settled content.
+                # Must re-encode: Playwright's VP8 webm has a single keyframe at
+                # the start, so `-c copy` cannot cut at an arbitrary offset — it
+                # silently emits the whole clip (or, with input-seek, an empty
+                # file). libvpx re-encode trims to the exact requested window.
+                "-ss",
+                str(delay),
                 "-t",
                 str(seconds),
-                "-c",
-                "copy",
+                "-c:v",
+                "libvpx",
+                "-b:v",
+                "1M",
                 str(final),
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
