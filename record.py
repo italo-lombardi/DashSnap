@@ -91,7 +91,12 @@ OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/DashSnap"))
 CHROMIUM_PATH = os.environ.get("CHROMIUM_PATH") or None
 
 
-def _concat_lines(frames, seconds, fps=25):
+# Output framerate; also the fallback frame period when a screencast frame
+# arrives without a metadata.timestamp.
+_FPS = 25
+
+
+def _concat_lines(frames, seconds, fps=_FPS):
     """Build ffmpeg concat-demuxer lines from captured (path, wall_ts) frames.
 
     Per-frame `duration` is the wall-clock delta to the next frame, so idle
@@ -112,7 +117,7 @@ def _concat_lines(frames, seconds, fps=25):
     return lines
 
 
-def _encode_args(list_file, final, seconds, fps=25):
+def _encode_args(list_file, final, seconds, fps=_FPS):
     """ffmpeg argv to assemble CDP screencast JPEG frames into a VP8 webm.
 
     The concat demuxer reads per-frame `duration` directives (real wall-clock
@@ -357,7 +362,8 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
                 # index / fps so a frame without it doesn't KeyError.
                 ts = params.get("metadata", {}).get("timestamp")
                 if ts is None:
-                    ts = (start_ts or 0) + len(frames) / 25
+                    base = start_ts if start_ts is not None else 0
+                    ts = base + len(frames) / _FPS
                 if start_ts is None:
                     start_ts = ts
                 # Filename is server-generated (`f<int>.jpg`); _safe() enforces
