@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [0.1.6] - 2026-07-20
+
+### Fixed
+- **Recordings of static/live pages are now exactly `seconds` long.** CDP screencast only emits a frame when pixels change, so a live camera whose stream stalls (or any mostly-static dashboard) delivers its last frame early — e.g. frames spanning 7.5s for a 15s request. The concat demuxer silently drops a large trailing `duration`, so the padded last frame did not hold and the output undershot (8s clip for `seconds: 15`). The encoder now uses `tpad=stop_mode=clone` to clone the last frame up to `seconds`; `-t seconds` caps it. Verified: 7.5s of captured frames → 15.000s output.
+
 ## [0.1.5] - 2026-07-20
 
 ### Changed

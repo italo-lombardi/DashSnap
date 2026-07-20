@@ -1321,7 +1321,8 @@ class TestEncodeArgs:
     def test_concat_encode(self):
         import record
 
-        args = record._encode_args("/tmp/frames.txt", "/tmp/out.webm", seconds=3)
+        # frames span 8s of a 20s request → tpad clones only the 12s gap
+        args = record._encode_args("/tmp/frames.txt", "/tmp/out.webm", seconds=20, span=8.0)
 
         # concat demuxer reading the frame list.
         assert args[args.index("-f") + 1] == "concat"
@@ -1329,17 +1330,29 @@ class TestEncodeArgs:
 
         # VP8 re-encode, hard duration cap == seconds, final arg is the output.
         assert args[args.index("-c:v") + 1] == "libvpx"
-        assert args[args.index("-t") + 1] == "3"
+        assert args[args.index("-t") + 1] == "20"
+        # tpad clones the last frame to fill ONLY the gap (seconds - span), so a
+        # static page whose screencast stops early still yields a full-length
+        # clip without over-cloning a moving page.
+        assert args[args.index("-vf") + 1] == "tpad=stop_mode=clone:stop_duration=12.000"
         assert "copy" not in args
         assert args[-1] == "/tmp/out.webm"
+
+    def test_no_pad_when_frames_already_span_window(self):
+        import record
+
+        # moving page: frames span the full window → zero clone
+        args = record._encode_args("/tmp/frames.txt", "/tmp/out.webm", seconds=15, span=15.2)
+        assert args[args.index("-vf") + 1] == "tpad=stop_mode=clone:stop_duration=0.000"
 
 
 class TestConcatLines:
     """The concat-list builder is pure: per-frame duration = wall-clock delta to
-    the next frame; the last frame is held until the capture window ends and is
-    re-listed (the concat demuxer drops the final entry's duration otherwise)."""
+    the next frame; the last frame gets one frame period and is re-listed (the
+    concat demuxer drops the final entry's duration otherwise). Filling the tail
+    to `seconds` is the encoder's tpad job, not this builder's."""
 
-    def test_per_frame_deltas_and_last_frame_held_to_window(self):
+    def test_per_frame_deltas_and_last_frame_relisted(self):
         import record
 
         frames = [
@@ -1347,22 +1360,21 @@ class TestConcatLines:
             (Path("/t/f000001.jpg"), 0.5),
             (Path("/t/f000002.jpg"), 2.0),
         ]
-        lines = record._concat_lines(frames, seconds=10, fps=25)
+        lines = record._concat_lines(frames, fps=25)
 
         assert lines[0] == "ffconcat version 1.0"
         # frame 0 held 0.5s (delta to frame 1), frame 1 held 1.5s (to frame 2)
         assert lines[1:3] == ["file f000000.jpg", "duration 0.500"]
         assert lines[3:5] == ["file f000001.jpg", "duration 1.500"]
-        # last frame stamped at 2.0s but window is 10s → held 8.0s so timeline
-        # spans the full `seconds`; then re-listed with no duration.
-        assert lines[5:7] == ["file f000002.jpg", "duration 8.000"]
+        # last frame: one frame period (1/25 = 0.040), then re-listed bare
+        assert lines[5:7] == ["file f000002.jpg", "duration 0.040"]
         assert lines[-1] == "file f000002.jpg"
 
     def test_zero_delta_clamped_to_frame_period(self):
         import record
 
         frames = [(Path("/t/a.jpg"), 1.0), (Path("/t/b.jpg"), 1.0)]
-        lines = record._concat_lines(frames, seconds=5, fps=25)
+        lines = record._concat_lines(frames, fps=25)
         # identical timestamps → 0 delta clamped to one frame-period (1/25=0.040)
         assert "duration 0.040" in lines
 
