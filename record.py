@@ -116,22 +116,25 @@ def _concat_lines(frames, fps=_FPS):
     return lines
 
 
-def _encode_args(list_file, final, seconds, fps=_FPS):
+def _encode_args(list_file, final, seconds, span, fps=_FPS):
     """ffmpeg argv to assemble CDP screencast JPEG frames into a VP8 webm.
 
     The concat demuxer reads per-frame `duration` directives (real wall-clock
     spacing from CDP frame timestamps), so idle stretches are held for their
     true duration instead of collapsed. `tpad` clones the last frame to fill the
-    tail up to `seconds` — CDP screencast only paints on change, so a static
-    page's last frame can land early and the concat timeline would otherwise
-    undershoot (the demuxer will not honor a large trailing duration). `-r fps`
-    output CFR + `-t seconds` then guarantee the result is exactly `seconds`
-    long. We assemble frames captured *after* the settle, so `delay` is a pure
-    pre-roll and never appears here — this replaces the old
+    gap between the last real frame (`span` seconds in) and the full `seconds` —
+    CDP screencast only paints on change, so a static page's last frame can land
+    early and the concat timeline would otherwise undershoot (the demuxer will
+    not honor a large trailing duration). We clone only the gap, not a full
+    `seconds`, so a moving page whose frames already span the window adds no
+    wasted clone. `-r fps` output CFR + `-t seconds` then guarantee the result
+    is exactly `seconds` long. We assemble frames captured *after* the settle,
+    so `delay` is a pure pre-roll and never appears here — this replaces the old
     record-everything-then-trim approach, which could not work: Playwright's
     record_video collapses the idle settle to a few frames, so there was no
     wall-accurate offset to trim at.
     """
+    pad = max(seconds - span, 0)
     return [
         "ffmpeg",
         "-y",
@@ -142,7 +145,7 @@ def _encode_args(list_file, final, seconds, fps=_FPS):
         "-i",
         str(list_file),
         "-vf",
-        f"tpad=stop_mode=clone:stop_duration={seconds}",
+        f"tpad=stop_mode=clone:stop_duration={pad:.3f}",
         "-r",
         str(fps),
         "-c:v",
@@ -423,7 +426,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
 
     try:
         proc = await asyncio.create_subprocess_exec(
-            *_encode_args(list_file, final, seconds),
+            *_encode_args(list_file, final, seconds, frames[-1][1]),
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )

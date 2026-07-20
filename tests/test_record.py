@@ -1321,7 +1321,8 @@ class TestEncodeArgs:
     def test_concat_encode(self):
         import record
 
-        args = record._encode_args("/tmp/frames.txt", "/tmp/out.webm", seconds=3)
+        # frames span 8s of a 20s request → tpad clones only the 12s gap
+        args = record._encode_args("/tmp/frames.txt", "/tmp/out.webm", seconds=20, span=8.0)
 
         # concat demuxer reading the frame list.
         assert args[args.index("-f") + 1] == "concat"
@@ -1329,12 +1330,20 @@ class TestEncodeArgs:
 
         # VP8 re-encode, hard duration cap == seconds, final arg is the output.
         assert args[args.index("-c:v") + 1] == "libvpx"
-        assert args[args.index("-t") + 1] == "3"
-        # tpad clones the last frame to fill the tail up to `seconds`, so a static
-        # page whose screencast stops early still yields a full-length clip.
-        assert args[args.index("-vf") + 1] == "tpad=stop_mode=clone:stop_duration=3"
+        assert args[args.index("-t") + 1] == "20"
+        # tpad clones the last frame to fill ONLY the gap (seconds - span), so a
+        # static page whose screencast stops early still yields a full-length
+        # clip without over-cloning a moving page.
+        assert args[args.index("-vf") + 1] == "tpad=stop_mode=clone:stop_duration=12.000"
         assert "copy" not in args
         assert args[-1] == "/tmp/out.webm"
+
+    def test_no_pad_when_frames_already_span_window(self):
+        import record
+
+        # moving page: frames span the full window → zero clone
+        args = record._encode_args("/tmp/frames.txt", "/tmp/out.webm", seconds=15, span=15.2)
+        assert args[args.index("-vf") + 1] == "tpad=stop_mode=clone:stop_duration=0.000"
 
 
 class TestConcatLines:
