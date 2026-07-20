@@ -2,7 +2,7 @@
 
 All notable changes to DashSnap.
 
-## [0.2.0] - 2026-07-20
+## [0.1.3] - 2026-07-20
 
 ### Changed
 - **Base image switched to `debian:bookworm-slim` with system `chromium`.** Debian builds Chromium with `proprietary_codecs=true` / `ffmpeg_branding="Chrome"`, so it ships H264 for both amd64 and arm64. Playwright now drives the system browser via `executable_path` (`CHROMIUM_PATH`, default `/usr/bin/chromium`).
