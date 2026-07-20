@@ -91,6 +91,23 @@ OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/DashSnap"))
 CHROMIUM_PATH = os.environ.get("CHROMIUM_PATH") or None
 
 
+def _concat_lines(frames, fps=25):
+    """Build ffmpeg concat-demuxer lines from captured (path, wall_ts) frames.
+
+    Per-frame `duration` is the wall-clock delta to the next frame, so idle
+    stretches are held for their true length. The last frame has no successor,
+    so it gets one frame-period (1/fps) and is re-listed — the concat demuxer
+    ignores the final entry's duration otherwise.
+    """
+    lines = ["ffconcat version 1.0"]
+    for i, (fp, ts) in enumerate(frames):
+        dur = (frames[i + 1][1] - ts) if i + 1 < len(frames) else 1 / fps
+        lines.append(f"file {fp.name}")
+        lines.append(f"duration {max(dur, 0.001):.3f}")
+    lines.append(f"file {frames[-1][0].name}")
+    return lines
+
+
 def _encode_args(list_file, final, seconds, fps=25):
     """ffmpeg argv to assemble CDP screencast JPEG frames into a VP8 webm.
 
@@ -220,6 +237,14 @@ AUTH_STRATEGIES = {
 # ---------------------------------------------------------------------------
 
 
+def _safe_filename_component(value: str) -> str:
+    """Sanitize a URL-derived string into a safe filename slug (no path taint)."""
+    candidate = re.sub(r"[^a-zA-Z0-9]+", "_", value)[:40].strip("_")
+    if re.fullmatch(r"[a-zA-Z0-9_]{1,40}", candidate):
+        return candidate
+    return "page"
+
+
 async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  # pragma: no cover
     target = TARGETS.get(target_name or DEFAULT_TARGET)
     if target is None:
@@ -238,9 +263,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
     safe_root = OUT_DIR.resolve()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     _path = urlparse(url).path.strip("/") or urlparse(url).netloc
-    _slug_raw = re.sub(r"[^a-zA-Z0-9]+", "_", _path)[:40].strip("_") or "page"
-    _m = re.fullmatch(r"[a-zA-Z0-9_]{1,40}", _slug_raw)
-    slug = _m.group(0) if _m else "page"  # taint ends: only fullmatch group used
+    slug = _safe_filename_component(_path)
     token = uuid.uuid4().hex  # server-generated, never user-controlled — safe for paths
     is_png = fmt == "png"
 
@@ -309,17 +332,28 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
             # Capture exactly `seconds` of the warm page via CDP screencast.
             session = await ctx.new_cdp_session(page)
             start_ts = None
+            acks = []  # in-flight ack tasks — drained before detach
 
             def _on_frame(params):
                 nonlocal start_ts
-                # Must ack every frame or Chromium halts the stream.
-                asyncio.create_task(
-                    session.send("Page.screencastFrameAck", {"sessionId": params["sessionId"]})
+                # Must ack every frame or Chromium halts the stream. Track the
+                # task so we can drain acks before detaching (an ack firing
+                # after detach() raises in an orphan task).
+                acks.append(
+                    asyncio.create_task(
+                        session.send("Page.screencastFrameAck", {"sessionId": params["sessionId"]})
+                    )
                 )
-                ts = params["metadata"]["timestamp"]  # monotonic wall-clock seconds
+                # timestamp is optional in the CDP metadata; fall back to frame
+                # index / fps so a frame without it doesn't KeyError.
+                ts = params.get("metadata", {}).get("timestamp")
+                if ts is None:
+                    ts = (start_ts or 0) + len(frames) / 25
                 if start_ts is None:
                     start_ts = ts
-                fp = tmp_dir / f"f{len(frames):06d}.jpg"
+                # Filename is server-generated (`f<int>.jpg`); _safe() enforces
+                # OUT_DIR containment so CodeQL sees the sanitizer.
+                fp = _safe(tmp_dir / f"f{len(frames):06d}.jpg")
                 fp.write_bytes(base64.b64decode(params["data"]))
                 frames.append((fp, ts - start_ts))
 
@@ -330,6 +364,9 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
             )
             await asyncio.sleep(seconds)
             await session.send("Page.stopScreencast")
+            # Drain outstanding acks before detach so none fire on a dead session.
+            if acks:
+                await asyncio.gather(*acks, return_exceptions=True)
             await session.detach()
         finally:
             await ctx.close()
@@ -340,17 +377,10 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
         raise RuntimeError("no frames captured")
 
     # Build a concat list with real per-frame durations (wall-clock deltas), so
-    # the encoded timeline matches real time. Last frame re-listed — the concat
-    # demuxer ignores the final entry's duration otherwise.
+    # the encoded timeline matches real time.
     final = _safe(OUT_DIR / f"{stamp}_{slug}.webm")
     list_file = tmp_dir / "frames.txt"
-    lines = ["ffconcat version 1.0"]
-    for i, (fp, ts) in enumerate(frames):
-        dur = (frames[i + 1][1] - ts) if i + 1 < len(frames) else 0.04
-        lines.append(f"file {fp.name}")
-        lines.append(f"duration {max(dur, 0.001):.3f}")
-    lines.append(f"file {frames[-1][0].name}")
-    list_file.write_text("\n".join(lines))
+    list_file.write_text("\n".join(_concat_lines(frames)))
 
     try:
         proc = await asyncio.create_subprocess_exec(

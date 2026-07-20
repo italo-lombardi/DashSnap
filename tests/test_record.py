@@ -1332,3 +1332,45 @@ class TestEncodeArgs:
         assert args[args.index("-t") + 1] == "3"
         assert "copy" not in args
         assert args[-1] == "/tmp/out.webm"
+
+
+class TestConcatLines:
+    """The concat-list builder is pure: per-frame duration = wall-clock delta to
+    the next frame; the last frame gets one frame-period and is re-listed (the
+    concat demuxer drops the final entry's duration otherwise)."""
+
+    def test_per_frame_deltas_and_last_frame_relisted(self):
+        import record
+
+        frames = [
+            (Path("/t/f000000.jpg"), 0.0),
+            (Path("/t/f000001.jpg"), 0.5),
+            (Path("/t/f000002.jpg"), 2.0),
+        ]
+        lines = record._concat_lines(frames, fps=25)
+
+        assert lines[0] == "ffconcat version 1.0"
+        # frame 0 held 0.5s (delta to frame 1), frame 1 held 1.5s (to frame 2)
+        assert lines[1:3] == ["file f000000.jpg", "duration 0.500"]
+        assert lines[3:5] == ["file f000001.jpg", "duration 1.500"]
+        # last frame: one frame-period (1/25 = 0.040), then re-listed with no duration
+        assert lines[5:7] == ["file f000002.jpg", "duration 0.040"]
+        assert lines[-1] == "file f000002.jpg"
+
+    def test_zero_delta_clamped_to_min(self):
+        import record
+
+        frames = [(Path("/t/a.jpg"), 1.0), (Path("/t/b.jpg"), 1.0)]
+        lines = record._concat_lines(frames)
+        # identical timestamps → 0 delta clamped to 0.001
+        assert "duration 0.001" in lines
+
+
+class TestSafeFilenameComponent:
+    def test_sanitizes_and_truncates(self):
+        import record
+
+        assert record._safe_filename_component("/dashboard/cctv") == "dashboard_cctv"
+        assert record._safe_filename_component("") == "page"
+        assert record._safe_filename_component("///") == "page"
+        assert len(record._safe_filename_component("x" * 100)) == 40
