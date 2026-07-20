@@ -32,4 +32,9 @@ COPY icon.png /icon.png
 COPY run.sh /run.sh
 RUN chmod +x /run.sh
 
+# Supervisor passes the addon version as a build-arg; promote it to a runtime
+# env so the startup log can print which version is actually running.
+ARG BUILD_VERSION
+ENV BUILD_VERSION=${BUILD_VERSION}
+
 CMD ["/run.sh"]

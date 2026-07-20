@@ -977,7 +977,7 @@ app.router.add_get("/ha/dashboards", handle_ha_dashboards)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    log.info("DashSnap starting on port %d", _PORT)
+    log.info("DashSnap %s starting on port %d", os.environ.get("BUILD_VERSION", "dev"), _PORT)
     log.info(
         "Timezone: TZ=%s local now=%s",
         os.environ.get("TZ", "<unset>"),
