@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [0.1.3] - 2026-07-20
+
+### Fixed
+- Install `tzdata` in the image. The base Playwright image ships no zoneinfo database, so `time.tzset()` (added in 0.1.2) could not resolve `TZ=Europe/Dublin` and `datetime.now()` silently stayed UTC — filenames were still stamped in UTC. With tzdata present, `TZ` now resolves and filenames use local time. (Completes the 0.1.2 fix.)
+
 ## [0.1.2] - 2026-07-20
 
 ### Fixed
