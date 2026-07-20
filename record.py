@@ -16,7 +16,8 @@ from aiohttp import web
 from playwright.async_api import async_playwright
 
 # HA supervisor injects TZ env; apply it so datetime.now() is local, not UTC.
-if os.environ.get("TZ"):
+# tzset() is Unix-only (hasattr guard keeps a Windows dev from crashing at import).
+if os.environ.get("TZ") and hasattr(time, "tzset"):
     time.tzset()
 
 _PORT = int(os.environ.get("INGRESS_PORT", 8099))
