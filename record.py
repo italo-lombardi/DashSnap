@@ -84,6 +84,11 @@ log = logging.getLogger("dashsnap")
 
 OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/DashSnap"))
 
+# System chromium built with H264 (Debian) — needed for live camera streams
+# (Nest WebRTC requires H264, which Playwright's bundled Chromium lacks).
+# Unset (e.g. local dev / tests) falls back to Playwright's bundled browser.
+CHROMIUM_PATH = os.environ.get("CHROMIUM_PATH") or None
+
 DEFAULTS = {
     "seconds": 30,
     "viewport_width": 1920,
@@ -218,7 +223,9 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
         tmp_dir.mkdir(exist_ok=True)
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
+        browser = await p.chromium.launch(
+            executable_path=CHROMIUM_PATH, args=["--no-sandbox", "--disable-dev-shm-usage"]
+        )
         ctx_kwargs = {"viewport": {"width": vw, "height": vh}}
         if not is_png:
             ctx_kwargs["record_video_dir"] = str(tmp_dir)
@@ -229,7 +236,17 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
             if is_ha_url or strategy not in ("ha_token", "none"):
                 await apply_auth(ctx, page, auth_cfg, base_url)
 
-            await page.goto(url, wait_until="networkidle")
+            # "domcontentloaded" not "networkidle": live camera/media streams
+            # (e.g. Nest WebRTC) keep the network busy forever, so a bare
+            # networkidle would time out and abort the recording. Load the DOM,
+            # then wait for network quiet only up to 10s — enough for a normal
+            # dashboard to settle, but a live stream just hits the cap and we
+            # record anyway. The `delay` param adds extra settle on top.
+            await page.goto(url, wait_until="domcontentloaded")
+            try:
+                await page.wait_for_load_state("networkidle", timeout=10000)
+            except Exception:  # noqa: BLE001, SIM105
+                pass  # live stream never idles — record what rendered so far
 
             if is_ha_url:
                 try:
@@ -270,10 +287,14 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
             proc = await asyncio.create_subprocess_exec(
                 "ffmpeg",
                 "-y",
-                "-i",
-                str(raw),
+                # Input seek (-ss before -i): Playwright's VP8 webm has sparse
+                # keyframes, so an output-side -ss with -c copy seeks past all
+                # content and writes an empty file. Seeking on input trims to
+                # the nearest keyframe correctly without a re-encode.
                 "-ss",
                 str(delay),
+                "-i",
+                str(raw),
                 "-t",
                 str(seconds),
                 "-c",
