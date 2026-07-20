@@ -6,6 +6,7 @@ import pathlib
 import re
 import shutil
 import socket
+import time
 import uuid
 from datetime import datetime
 from urllib.parse import urlparse
@@ -13,6 +14,10 @@ from urllib.parse import urlparse
 import aiohttp
 from aiohttp import web
 from playwright.async_api import async_playwright
+
+# HA supervisor injects TZ env; apply it so datetime.now() is local, not UTC.
+if os.environ.get("TZ"):
+    time.tzset()
 
 _PORT = int(os.environ.get("INGRESS_PORT", 8099))
 
@@ -938,6 +943,7 @@ app.router.add_get("/ha/dashboards", handle_ha_dashboards)
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     log.info("DashSnap starting on port %d", _PORT)
+    log.info("Timezone: TZ=%s local now=%s", os.environ.get("TZ", "<unset>"), datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     log.info("Configured targets: %s", list(TARGETS.keys()) if TARGETS else "none")
     log.info("Default target: %s", DEFAULT_TARGET)
     _addrs = _self_ips()

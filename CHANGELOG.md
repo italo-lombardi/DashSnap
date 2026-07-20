@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [0.1.2] - 2026-07-20
+
+### Fixed
+- Recording filenames now use local time instead of UTC. The container ran in UTC and Python never applied the `TZ` env HA injects; `time.tzset()` is now called at startup so `datetime.now()` reflects the host timezone. Startup log prints `TZ` and local time for diagnosis.
+
 ## [0.1.1] - 2026-07-16
 
 ### Fixed
