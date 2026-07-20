@@ -1311,72 +1311,31 @@ class TestHandleConfigSave:
         assert "boom" in data["error"]
 
 
-class TestEncodeArgs:
-    """Guards the ffmpeg concat-encode args. The recorder captures CDP
-    screencast frames (after the settle) and muxes them with per-frame
-    durations; output must be exactly `seconds` long via -t. Earlier record-all
-    -then-trim approaches could not honor this (Playwright collapses idle time).
-    """
+class TestTrimArgs:
+    """Guards the ffmpeg trim args. The recorder captures the whole
+    `delay + seconds` window with Playwright's native video, then this trims the
+    `delay` pre-roll off and caps to exactly `seconds`. A re-encode (not
+    `-c copy`) is required: the VP8 recording has one keyframe at the start."""
 
-    def test_concat_encode(self):
+    def test_trim_encode(self):
         import record
 
-        # frames span 8s of a 20s request → tpad clones only the 12s gap
-        args = record._encode_args("/tmp/frames.txt", "/tmp/out.webm", seconds=20, span=8.0)
+        args = record._trim_args("/tmp/raw.webm", "/tmp/out.webm", delay=10, seconds=15)
 
-        # concat demuxer reading the frame list.
-        assert args[args.index("-f") + 1] == "concat"
-        assert args[args.index("-i") + 1] == "/tmp/frames.txt"
-
-        # VP8 re-encode, hard duration cap == seconds, final arg is the output.
+        # input-seek the delay off, re-encode, hard-cap to seconds.
+        assert args[args.index("-ss") + 1] == "10"
+        assert args[args.index("-i") + 1] == "/tmp/raw.webm"
+        assert args[args.index("-t") + 1] == "15"
         assert args[args.index("-c:v") + 1] == "libvpx"
-        assert args[args.index("-t") + 1] == "20"
-        # tpad clones the last frame to fill ONLY the gap (seconds - span), so a
-        # static page whose screencast stops early still yields a full-length
-        # clip without over-cloning a moving page.
-        assert args[args.index("-vf") + 1] == "tpad=stop_mode=clone:stop_duration=12.000"
         assert "copy" not in args
         assert args[-1] == "/tmp/out.webm"
 
-    def test_no_pad_when_frames_already_span_window(self):
+    def test_seek_before_input(self):
         import record
 
-        # moving page: frames span the full window → zero clone
-        args = record._encode_args("/tmp/frames.txt", "/tmp/out.webm", seconds=15, span=15.2)
-        assert args[args.index("-vf") + 1] == "tpad=stop_mode=clone:stop_duration=0.000"
-
-
-class TestConcatLines:
-    """The concat-list builder is pure: per-frame duration = wall-clock delta to
-    the next frame; the last frame gets one frame period and is re-listed (the
-    concat demuxer drops the final entry's duration otherwise). Filling the tail
-    to `seconds` is the encoder's tpad job, not this builder's."""
-
-    def test_per_frame_deltas_and_last_frame_relisted(self):
-        import record
-
-        frames = [
-            (Path("/t/f000000.jpg"), 0.0),
-            (Path("/t/f000001.jpg"), 0.5),
-            (Path("/t/f000002.jpg"), 2.0),
-        ]
-        lines = record._concat_lines(frames, fps=25)
-
-        assert lines[0] == "ffconcat version 1.0"
-        # frame 0 held 0.5s (delta to frame 1), frame 1 held 1.5s (to frame 2)
-        assert lines[1:3] == ["file f000000.jpg", "duration 0.500"]
-        assert lines[3:5] == ["file f000001.jpg", "duration 1.500"]
-        # last frame: one frame period (1/25 = 0.040), then re-listed bare
-        assert lines[5:7] == ["file f000002.jpg", "duration 0.040"]
-        assert lines[-1] == "file f000002.jpg"
-
-    def test_zero_delta_clamped_to_frame_period(self):
-        import record
-
-        frames = [(Path("/t/a.jpg"), 1.0), (Path("/t/b.jpg"), 1.0)]
-        lines = record._concat_lines(frames, fps=25)
-        # identical timestamps → 0 delta clamped to one frame-period (1/25=0.040)
-        assert "duration 0.040" in lines
+        # `-ss` MUST precede `-i` (input seek) for accurate keyframe-sparse VP8.
+        args = record._trim_args("/tmp/raw.webm", "/tmp/out.webm", delay=5, seconds=20)
+        assert args.index("-ss") < args.index("-i")
 
 
 class TestSafeFilenameComponent:

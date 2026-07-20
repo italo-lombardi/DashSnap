@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [0.1.8] - 2026-07-20
+
+### Fixed
+- **Live camera tiles no longer freeze mid-recording.** The CDP screencast approach (0.1.5–0.1.7) stopped painting the H264 `<video>` camera layers a few seconds into the clip — both Nest tiles froze at ~9.6s of a 15s recording, and the `tpad` tail-fill then cloned that frozen frame to full length, so the output looked frozen from ~6s on. Reverted to recording the whole `delay + seconds` window with Playwright's native video (which captures the video layers correctly) and trimming the `delay` pre-roll off with ffmpeg (`-ss delay -i` + `-t seconds`, re-encoded). The earlier undershoot that drove the switch away from this approach was the `-c copy` keyframe bug (0.1.3), not the record-then-trim approach itself. Verified end-to-end: 15.000s output, live motion every second, no frozen tail.
+
 ## [0.1.7] - 2026-07-20
 
 ### Fixed
