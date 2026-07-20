@@ -1336,10 +1336,10 @@ class TestEncodeArgs:
 
 class TestConcatLines:
     """The concat-list builder is pure: per-frame duration = wall-clock delta to
-    the next frame; the last frame gets one frame-period and is re-listed (the
-    concat demuxer drops the final entry's duration otherwise)."""
+    the next frame; the last frame is held until the capture window ends and is
+    re-listed (the concat demuxer drops the final entry's duration otherwise)."""
 
-    def test_per_frame_deltas_and_last_frame_relisted(self):
+    def test_per_frame_deltas_and_last_frame_held_to_window(self):
         import record
 
         frames = [
@@ -1347,23 +1347,24 @@ class TestConcatLines:
             (Path("/t/f000001.jpg"), 0.5),
             (Path("/t/f000002.jpg"), 2.0),
         ]
-        lines = record._concat_lines(frames, fps=25)
+        lines = record._concat_lines(frames, seconds=10, fps=25)
 
         assert lines[0] == "ffconcat version 1.0"
         # frame 0 held 0.5s (delta to frame 1), frame 1 held 1.5s (to frame 2)
         assert lines[1:3] == ["file f000000.jpg", "duration 0.500"]
         assert lines[3:5] == ["file f000001.jpg", "duration 1.500"]
-        # last frame: one frame-period (1/25 = 0.040), then re-listed with no duration
-        assert lines[5:7] == ["file f000002.jpg", "duration 0.040"]
+        # last frame stamped at 2.0s but window is 10s → held 8.0s so timeline
+        # spans the full `seconds`; then re-listed with no duration.
+        assert lines[5:7] == ["file f000002.jpg", "duration 8.000"]
         assert lines[-1] == "file f000002.jpg"
 
-    def test_zero_delta_clamped_to_min(self):
+    def test_zero_delta_clamped_to_frame_period(self):
         import record
 
         frames = [(Path("/t/a.jpg"), 1.0), (Path("/t/b.jpg"), 1.0)]
-        lines = record._concat_lines(frames)
-        # identical timestamps → 0 delta clamped to 0.001
-        assert "duration 0.001" in lines
+        lines = record._concat_lines(frames, seconds=5, fps=25)
+        # identical timestamps → 0 delta clamped to one frame-period (1/25=0.040)
+        assert "duration 0.040" in lines
 
 
 class TestSafeFilenameComponent:

@@ -91,19 +91,23 @@ OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/DashSnap"))
 CHROMIUM_PATH = os.environ.get("CHROMIUM_PATH") or None
 
 
-def _concat_lines(frames, fps=25):
+def _concat_lines(frames, seconds, fps=25):
     """Build ffmpeg concat-demuxer lines from captured (path, wall_ts) frames.
 
     Per-frame `duration` is the wall-clock delta to the next frame, so idle
-    stretches are held for their true length. The last frame has no successor,
-    so it gets one frame-period (1/fps) and is re-listed — the concat demuxer
-    ignores the final entry's duration otherwise.
+    stretches are held for their true length. The last frame is held until the
+    end of the capture window (`seconds - its_ts`) so the timeline spans the
+    full `seconds` even when Chromium stops emitting frames on a static page
+    (CDP screencast only paints on change, so the final frame can be stamped
+    well before the window ends — without this pad the output undershoots and
+    `-t seconds` cannot extend it). The last frame is re-listed because the
+    concat demuxer ignores the final entry's duration otherwise.
     """
     lines = ["ffconcat version 1.0"]
     for i, (fp, ts) in enumerate(frames):
-        dur = (frames[i + 1][1] - ts) if i + 1 < len(frames) else 1 / fps
+        dur = (frames[i + 1][1] - ts) if i + 1 < len(frames) else (seconds - ts)
         lines.append(f"file {fp.name}")
-        lines.append(f"duration {max(dur, 0.001):.3f}")
+        lines.append(f"duration {max(dur, 1 / fps):.3f}")
     lines.append(f"file {frames[-1][0].name}")
     return lines
 
@@ -380,7 +384,7 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
     # the encoded timeline matches real time.
     final = _safe(OUT_DIR / f"{stamp}_{slug}.webm")
     list_file = tmp_dir / "frames.txt"
-    list_file.write_text("\n".join(_concat_lines(frames)))
+    list_file.write_text("\n".join(_concat_lines(frames, seconds)))
 
     try:
         proc = await asyncio.create_subprocess_exec(
