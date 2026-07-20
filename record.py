@@ -96,21 +96,20 @@ CHROMIUM_PATH = os.environ.get("CHROMIUM_PATH") or None
 _FPS = 25
 
 
-def _concat_lines(frames, seconds, fps=_FPS):
+def _concat_lines(frames, fps=_FPS):
     """Build ffmpeg concat-demuxer lines from captured (path, wall_ts) frames.
 
     Per-frame `duration` is the wall-clock delta to the next frame, so idle
-    stretches are held for their true length. The last frame is held until the
-    end of the capture window (`seconds - its_ts`) so the timeline spans the
-    full `seconds` even when Chromium stops emitting frames on a static page
-    (CDP screencast only paints on change, so the final frame can be stamped
-    well before the window ends — without this pad the output undershoots and
-    `-t seconds` cannot extend it). The last frame is re-listed because the
-    concat demuxer ignores the final entry's duration otherwise.
+    stretches are held for their true length. The last frame gets one frame
+    period and is re-listed (the concat demuxer drops the final entry's
+    duration otherwise). Reaching the full `seconds` is handled by the encoder's
+    tpad filter, not here — the concat demuxer does not reliably honor a large
+    trailing duration, so a static page whose last frame lands early would
+    otherwise undershoot.
     """
     lines = ["ffconcat version 1.0"]
     for i, (fp, ts) in enumerate(frames):
-        dur = (frames[i + 1][1] - ts) if i + 1 < len(frames) else (seconds - ts)
+        dur = (frames[i + 1][1] - ts) if i + 1 < len(frames) else 1 / fps
         lines.append(f"file {fp.name}")
         lines.append(f"duration {max(dur, 1 / fps):.3f}")
     lines.append(f"file {frames[-1][0].name}")
@@ -122,12 +121,16 @@ def _encode_args(list_file, final, seconds, fps=_FPS):
 
     The concat demuxer reads per-frame `duration` directives (real wall-clock
     spacing from CDP frame timestamps), so idle stretches are held for their
-    true duration instead of collapsed. `-r fps` output CFR + `-t seconds`
-    guarantee the result is exactly `seconds` long. We assemble frames captured
-    *after* the settle, so `delay` is a pure pre-roll and never appears here —
-    this replaces the old record-everything-then-trim approach, which could not
-    work: Playwright's record_video collapses the idle settle to a few frames,
-    so there was no wall-accurate offset to trim at.
+    true duration instead of collapsed. `tpad` clones the last frame to fill the
+    tail up to `seconds` — CDP screencast only paints on change, so a static
+    page's last frame can land early and the concat timeline would otherwise
+    undershoot (the demuxer will not honor a large trailing duration). `-r fps`
+    output CFR + `-t seconds` then guarantee the result is exactly `seconds`
+    long. We assemble frames captured *after* the settle, so `delay` is a pure
+    pre-roll and never appears here — this replaces the old
+    record-everything-then-trim approach, which could not work: Playwright's
+    record_video collapses the idle settle to a few frames, so there was no
+    wall-accurate offset to trim at.
     """
     return [
         "ffmpeg",
@@ -138,6 +141,8 @@ def _encode_args(list_file, final, seconds, fps=_FPS):
         "0",
         "-i",
         str(list_file),
+        "-vf",
+        f"tpad=stop_mode=clone:stop_duration={seconds}",
         "-r",
         str(fps),
         "-c:v",
@@ -407,7 +412,14 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
     # the encoded timeline matches real time.
     final = _safe(OUT_DIR / f"{stamp}_{slug}.webm")
     list_file = tmp_dir / "frames.txt"
-    list_file.write_text("\n".join(_concat_lines(frames, seconds)))
+    concat = _concat_lines(frames)
+    log.info(
+        "captured %d frames spanning %.2fs (target %ds; tpad fills the tail)",
+        len(frames),
+        frames[-1][1],
+        seconds,
+    )
+    list_file.write_text("\n".join(concat))
 
     try:
         proc = await asyncio.create_subprocess_exec(
