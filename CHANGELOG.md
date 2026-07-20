@@ -2,6 +2,17 @@
 
 All notable changes to DashSnap.
 
+## [0.2.0] - 2026-07-20
+
+### Changed
+- **Base image switched to `debian:bookworm-slim` with system `chromium`.** Debian builds Chromium with `proprietary_codecs=true` / `ffmpeg_branding="Chrome"`, so it ships H264 for both amd64 and arm64. Playwright now drives the system browser via `executable_path` (`CHROMIUM_PATH`, default `/usr/bin/chromium`).
+
+### Fixed
+- **Live camera streams now render.** Playwright's bundled Chromium had no H264 codec, so Nest (and any H264 WebRTC) cameras came out blank with `Offer must contain H264/90000`. The Debian chromium negotiates H264 (verified: `canPlayType` → `probably`, WebRTC send/recv list H264).
+- **Recording no longer hangs on pages with live streams.** `page.goto` used `wait_until="networkidle"`; a live stream never goes idle, so navigation timed out and the recording was aborted (empty file). Now loads with `domcontentloaded` and waits for network quiet only up to 10s.
+- **Delayed recordings no longer produce empty files.** The `delay` trim used an output-side `-ss` with `-c copy`; Playwright's VP8 webm has sparse keyframes, so the seek landed past all content and wrote a 0-frame file. Moved `-ss` before `-i` (input seek) to trim to the nearest keyframe without re-encoding. This was the real cause of the 509-byte recordings.
+- Install `tzdata` so `TZ` resolves and filenames use local time instead of UTC. (Completes the 0.1.2 fix.)
+
 ## [0.1.2] - 2026-07-20
 
 ### Fixed
