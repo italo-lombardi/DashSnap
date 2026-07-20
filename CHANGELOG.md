@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [0.1.4] - 2026-07-20
+
+### Fixed
+- `build.yaml` `build_from` now uses fully-qualified image refs (`docker.io/library/debian:bookworm-slim`). The Supervisor validates `build_from` against a regex that requires a registry path; a bare `debian:bookworm-slim` failed it, so the Supervisor silently fell back to its Alpine `base:latest` — where the Dockerfile's `apt-get` does not exist (`/bin/ash: apt-get: not found`) and the addon build failed. (0.1.3 built fine via plain Docker/compose, which reads the Dockerfile `ARG` default, but never through the Supervisor.)
+
 ## [0.1.3] - 2026-07-20
 
 ### Changed
