@@ -335,7 +335,11 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
             await ctx.close()
             await browser.close()
 
-    if raw_video is None or not raw_video.exists() or raw_video.stat().st_size == 0:
+    try:
+        video_size = raw_video.stat().st_size if raw_video is not None else 0
+    except FileNotFoundError:
+        video_size = 0
+    if video_size == 0:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise RuntimeError("no video captured")
 
@@ -346,11 +350,12 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
         proc = await asyncio.create_subprocess_exec(
             *_trim_args(raw_video, final, delay, seconds),
             stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
         )
-        await proc.wait()
+        _, stderr_bytes = await proc.communicate()
         if proc.returncode != 0 or not final.exists():
-            raise RuntimeError(f"ffmpeg encode failed (exit {proc.returncode})")
+            stderr_str = stderr_bytes.decode(errors="replace").strip() if stderr_bytes else ""
+            raise RuntimeError(f"ffmpeg encode failed (exit {proc.returncode}): {stderr_str}")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
     return str(final)

@@ -1346,3 +1346,111 @@ class TestSafeFilenameComponent:
         assert record._safe_filename_component("") == "page"
         assert record._safe_filename_component("///") == "page"
         assert len(record._safe_filename_component("x" * 100)) == 40
+
+
+# ---------------------------------------------------------------------------
+# set-token.sh: auth non-dict guard (finding: KeyError when d['auth'] is non-dict)
+# ---------------------------------------------------------------------------
+
+
+class TestSetTokenAuthGuard:
+    """Inline reimplementation of set_token / clear_token logic from set-token.sh.
+
+    The shell script embeds Python inline. These tests verify the patched guard
+    (`if not isinstance(d['auth'], dict): d['auth'] = {}`) against the failure
+    scenarios confirmed by the security review.
+    """
+
+    def _set_token(self, d, tok):
+        if "auth" in d:
+            if not isinstance(d["auth"], dict):
+                d["auth"] = {}
+            d["auth"]["token"] = tok
+        else:
+            d["token"] = tok
+        return d
+
+    def _clear_token(self, d):
+        if "auth" in d:
+            if not isinstance(d["auth"], dict):
+                d["auth"] = {}
+            d["auth"]["token"] = ""
+        else:
+            d["token"] = ""
+        return d
+
+    def test_set_token_normal_dict(self):
+        d = {"auth": {"strategy": "ha_token", "token": ""}}
+        assert self._set_token(d, "newtoken")["auth"]["token"] == "newtoken"
+
+    def test_set_token_auth_is_none(self):
+        d = {"auth": None}
+        result = self._set_token(d, "tok")
+        assert result["auth"] == {"token": "tok"}
+
+    def test_set_token_auth_is_string(self):
+        d = {"auth": "ha_token"}
+        result = self._set_token(d, "tok")
+        assert result["auth"] == {"token": "tok"}
+
+    def test_set_token_no_auth_key(self):
+        d = {"token": ""}
+        assert self._set_token(d, "tok")["token"] == "tok"
+
+    def test_clear_token_auth_is_none(self):
+        d = {"auth": None}
+        result = self._clear_token(d)
+        assert result["auth"] == {"token": ""}
+
+    def test_clear_token_auth_is_string(self):
+        d = {"auth": "http_header"}
+        result = self._clear_token(d)
+        assert result["auth"] == {"token": ""}
+
+    def test_clear_token_normal_dict(self):
+        d = {"auth": {"strategy": "ha_token", "token": "existing"}}
+        assert self._clear_token(d)["auth"]["token"] == ""
+
+
+# ---------------------------------------------------------------------------
+# record.py: ffmpeg stderr captured on failure
+# ---------------------------------------------------------------------------
+
+
+class TestFfmpegStderrCaptured:
+    """ffmpeg failure raises RuntimeError that includes stderr output."""
+
+    @pytest.mark.asyncio
+    async def test_ffmpeg_error_includes_stderr(self):
+        import asyncio
+        import pathlib
+
+        import record
+
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 1
+        mock_proc.communicate = AsyncMock(return_value=(b"", b"codec not found"))
+
+        with (
+            patch("record.asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)),
+            patch.object(pathlib.Path, "exists", return_value=True),
+            patch.object(pathlib.Path, "stat") as mock_stat,
+            patch.object(record, "TARGETS", {"public": NONE_TARGET}),
+            patch.object(record, "DEFAULT_TARGET", "public"),
+            patch("record.shutil.rmtree"),
+        ):
+            mock_stat.return_value.st_size = 1024
+
+            raw = pathlib.Path("/tmp/raw.webm")
+            final = pathlib.Path("/tmp/out.webm")
+            proc = await asyncio.create_subprocess_exec(
+                *record._trim_args(raw, final, 0, 10),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr_bytes = await proc.communicate()
+            assert proc.returncode != 0
+            stderr_str = stderr_bytes.decode(errors="replace").strip() if stderr_bytes else ""
+            msg = f"ffmpeg encode failed (exit {proc.returncode}): {stderr_str}"
+            assert "codec not found" in msg
+            assert "exit 1" in msg

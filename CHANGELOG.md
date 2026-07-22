@@ -2,6 +2,13 @@
 
 All notable changes to DashSnap.
 
+## [0.1.9] - 2026-07-22
+
+### Fixed
+- **ffmpeg errors now surface in logs.** `stderr` was routed to `/dev/null`; on encode failure the `RuntimeError` only showed the exit code. Now captured via `PIPE` and appended to the error message.
+- **Atomic video file check.** Replaced the `exists()` + `stat()` two-call pattern with a single `try/stat()` + `FileNotFoundError` catch, eliminating a theoretical TOCTOU race in the post-record path.
+- **`set-token.sh` handles malformed `auth` values.** If `options.json` had `"auth"` set to a non-dict value (e.g. `null` or a string), `set_token` and `clear_token` would crash with `TypeError`. Both paths now guard with `isinstance` and reset to `{}` before writing the token (strategy is lost, but the config was already broken).
+
 ## [0.1.8] - 2026-07-20
 
 ### Fixed
