@@ -31,7 +31,6 @@ profile dashsnap flags=(complain) {
   capability setgid,
   capability setuid,
   capability net_bind_service,
-  capability sys_chroot,
   capability ipc_lock,
 
   # Python + venv
@@ -84,7 +83,7 @@ profile dashsnap flags=(complain) {
   /dev/random r,
   /dev/tty rw,
   /dev/dri/ r,
-  /dev/dri/** rw,
+  /dev/dri/** r,
   /dev/shm/ rw,
   /dev/shm/** rwk,
 
