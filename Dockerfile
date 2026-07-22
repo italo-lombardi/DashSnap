@@ -24,6 +24,8 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 # Playwright Python lib only — no chromium download (we use system chromium),
 # but Playwright's video recording needs its own ffmpeg helper binary.
+# Pin install path so it's HOME-independent (supervisor sets HOME=/, not /root).
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN pip install --no-cache-dir playwright==1.61.0 aiohttp==3.14.1 \
     && python3 -m playwright install ffmpeg
 

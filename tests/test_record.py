@@ -1420,6 +1420,7 @@ class TestSetTokenAuthGuard:
 class TestFfmpegStderrCaptured:
     """ffmpeg failure raises RuntimeError that includes stderr output."""
 
+    @pytest.mark.asyncio
     async def test_ffmpeg_error_includes_stderr(self):
         import asyncio
         import pathlib
