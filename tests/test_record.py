@@ -1488,6 +1488,6 @@ class TestFfmpegStderrCaptured:
                 except RuntimeError as e:
                     return str(e)
 
-        msg = asyncio.get_event_loop().run_until_complete(_run())
+        msg = asyncio.run(_run())
         assert "codec not found" in msg
         assert "exit 1" in msg
