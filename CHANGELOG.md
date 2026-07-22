@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [0.1.14] - 2026-07-22
+
+### Fixed
+- **Emoji and icon glyphs render correctly in screenshots** — added `fonts-noto-color-emoji` to the image. Headless Chromium on the minimal Debian base had no color emoji font, causing Unicode symbols to render as empty boxes (tofu) on screenshotted pages.
+
 ## [0.1.13] - 2026-07-22
 
 ### Fixed
