@@ -1,5 +1,5 @@
 name: DashSnap
-version: "0.1.11"
+version: "0.1.12"
 slug: dashsnap
 description: >-
   Screenshot or record any web page via headless Chromium. Supports HA, Grafana, and public pages. See README for setup.
@@ -10,7 +10,7 @@ ingress: true
 ingress_port: 8099
 panel_icon: mdi:monitor-screenshot
 panel_title: DashSnap
-apparmor: true
+apparmor: false
 init: false
 boot: manual
 map:
