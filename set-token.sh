@@ -23,6 +23,7 @@ p = '$CFG'
 with open(p) as f: d = json.load(f)
 if 'auth' in d:
     if not isinstance(d['auth'], dict):
+        # malformed auth value (e.g. null, string) — reset to dict; strategy is lost but token wins
         d['auth'] = {}
     d['auth']['token'] = os.environ['DS_TOK']
 else:
@@ -39,6 +40,7 @@ p = '$CFG'
 with open(p) as f: d = json.load(f)
 if 'auth' in d:
     if not isinstance(d['auth'], dict):
+        # malformed auth value — reset to dict; strategy is lost but token wins
         d['auth'] = {}
     d['auth']['token'] = ''
 else:
