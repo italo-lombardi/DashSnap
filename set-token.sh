@@ -22,6 +22,8 @@ import json, os
 p = '$CFG'
 with open(p) as f: d = json.load(f)
 if 'auth' in d:
+    if not isinstance(d['auth'], dict):
+        d['auth'] = {}
     d['auth']['token'] = os.environ['DS_TOK']
 else:
     d['token'] = os.environ['DS_TOK']
@@ -36,6 +38,8 @@ import json
 p = '$CFG'
 with open(p) as f: d = json.load(f)
 if 'auth' in d:
+    if not isinstance(d['auth'], dict):
+        d['auth'] = {}
     d['auth']['token'] = ''
 else:
     d['token'] = ''

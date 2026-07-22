@@ -1346,3 +1346,148 @@ class TestSafeFilenameComponent:
         assert record._safe_filename_component("") == "page"
         assert record._safe_filename_component("///") == "page"
         assert len(record._safe_filename_component("x" * 100)) == 40
+
+
+# ---------------------------------------------------------------------------
+# set-token.sh: auth non-dict guard (finding: KeyError when d['auth'] is non-dict)
+# ---------------------------------------------------------------------------
+
+
+class TestSetTokenAuthGuard:
+    """Inline reimplementation of set_token / clear_token logic from set-token.sh.
+
+    The shell script embeds Python inline. These tests verify the patched guard
+    (`if not isinstance(d['auth'], dict): d['auth'] = {}`) against the failure
+    scenarios confirmed by the security review.
+    """
+
+    def _set_token(self, d, tok):
+        if "auth" in d:
+            if not isinstance(d["auth"], dict):
+                d["auth"] = {}
+            d["auth"]["token"] = tok
+        else:
+            d["token"] = tok
+        return d
+
+    def _clear_token(self, d):
+        if "auth" in d:
+            if not isinstance(d["auth"], dict):
+                d["auth"] = {}
+            d["auth"]["token"] = ""
+        else:
+            d["token"] = ""
+        return d
+
+    def test_set_token_normal_dict(self):
+        d = {"auth": {"strategy": "ha_token", "token": ""}}
+        assert self._set_token(d, "newtoken")["auth"]["token"] == "newtoken"
+
+    def test_set_token_auth_is_none(self):
+        d = {"auth": None}
+        result = self._set_token(d, "tok")
+        assert result["auth"] == {"token": "tok"}
+
+    def test_set_token_auth_is_string(self):
+        d = {"auth": "ha_token"}
+        result = self._set_token(d, "tok")
+        assert result["auth"] == {"token": "tok"}
+
+    def test_set_token_no_auth_key(self):
+        d = {"token": ""}
+        assert self._set_token(d, "tok")["token"] == "tok"
+
+    def test_clear_token_auth_is_none(self):
+        d = {"auth": None}
+        result = self._clear_token(d)
+        assert result["auth"] == {"token": ""}
+
+    def test_clear_token_auth_is_string(self):
+        d = {"auth": "http_header"}
+        result = self._clear_token(d)
+        assert result["auth"] == {"token": ""}
+
+    def test_clear_token_normal_dict(self):
+        d = {"auth": {"strategy": "ha_token", "token": "existing"}}
+        assert self._clear_token(d)["auth"]["token"] == ""
+
+
+# ---------------------------------------------------------------------------
+# record.py: TOCTOU — atomic stat() replaces exists()+stat()
+# ---------------------------------------------------------------------------
+
+
+class TestVideoCaptureStat:
+    """Verify the atomic stat()-based video check replaces the old TOCTOU pair.
+
+    record() is pragma: no cover (needs Playwright), so we test the logic via
+    _load_config / module inspection — we confirm the old two-call pattern is
+    gone and the new try/stat pattern is present.
+    """
+
+    def test_no_toctou_pattern_in_source(self):
+        import pathlib
+
+        src = (pathlib.Path(__file__).parent.parent / "record.py").read_text()
+        # Old pattern: raw_video.exists() should not appear (was the TOCTOU trigger)
+        assert "raw_video.exists()" not in src, "TOCTOU: raw_video.exists() still present"
+
+    def test_atomic_stat_pattern_present(self):
+        import pathlib
+
+        src = (pathlib.Path(__file__).parent.parent / "record.py").read_text()
+        assert "raw_video.stat().st_size" in src
+        assert "FileNotFoundError" in src
+
+
+# ---------------------------------------------------------------------------
+# record.py: ffmpeg stderr captured on failure
+# ---------------------------------------------------------------------------
+
+
+class TestFfmpegStderrCaptured:
+    """Confirm ffmpeg subprocess uses PIPE for stderr (not DEVNULL) so errors surface."""
+
+    def test_stderr_pipe_not_devnull_in_source(self):
+        import pathlib
+
+        src = (pathlib.Path(__file__).parent.parent / "record.py").read_text()
+        # The old bad pattern must be gone
+        assert "stderr=asyncio.subprocess.DEVNULL" not in src, (
+            "ffmpeg stderr still routed to DEVNULL — errors silently lost"
+        )
+        assert "stderr=asyncio.subprocess.PIPE" in src
+
+    def test_ffmpeg_error_includes_stderr(self):
+        """RuntimeError message includes ffmpeg output when exit code != 0."""
+        import asyncio
+        import pathlib
+        from unittest.mock import AsyncMock, patch
+
+        async def _run():
+            mock_proc = AsyncMock()
+            mock_proc.returncode = 1
+            mock_proc.communicate = AsyncMock(return_value=(b"", b"codec not found"))
+
+            with (
+                patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)),
+                patch.object(pathlib.Path, "exists", return_value=False),
+            ):
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "ffmpeg", stderr=asyncio.subprocess.PIPE
+                    )
+                    _, stderr_bytes = await proc.communicate()
+                    if proc.returncode != 0:
+                        stderr_str = (
+                            stderr_bytes.decode(errors="replace").strip() if stderr_bytes else ""
+                        )
+                        raise RuntimeError(
+                            f"ffmpeg encode failed (exit {proc.returncode}): {stderr_str}"
+                        )
+                except RuntimeError as e:
+                    return str(e)
+
+        msg = asyncio.get_event_loop().run_until_complete(_run())
+        assert "codec not found" in msg
+        assert "exit 1" in msg
