@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [0.1.11] - 2026-07-22
+
+### Fixed
+- **Version bump to force store update** — supervisor cache served `0.1.8` as latest despite `0.1.10` being live; bumping version string forces HA to surface the update prompt.
+
 ## [0.1.10] - 2026-07-22
 
 ### Added
