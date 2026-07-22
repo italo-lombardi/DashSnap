@@ -7,6 +7,9 @@ All notable changes to DashSnap.
 ### Added
 - **AppArmor profile** (`apparmor.txt`) — bumps HA security rating from 7 to 8. Profile covers headless Chromium (`--no-sandbox`), Playwright ffmpeg, system ffmpeg, aiohttp networking, `/data` and `/media/DashSnap` access. Runs in `flags=(complain)` mode: denials are logged but not enforced, making it safe across varied hardware (GPU drivers, kernel versions). Flip to enforcing once denial logs confirm completeness.
 
+### Fixed
+- **AppArmor schema** — `apparmor: dashsnap` (string) fails HA's new apps validator (`vol.Boolean()`). Changed to `apparmor: true`; `apparmor.txt` is still loaded automatically. Fixes "App DashSnap is not available inside store".
+
 ## [0.1.9] - 2026-07-22
 
 ### Fixed
