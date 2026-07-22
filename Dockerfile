@@ -12,6 +12,7 @@ RUN apt-get update \
         chromium \
         ffmpeg \
         fonts-liberation \
+        fonts-noto-color-emoji \
         tzdata \
         ca-certificates \
         python3 python3-pip python3-venv \
