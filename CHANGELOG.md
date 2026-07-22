@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [0.1.10] - 2026-07-22
+
+### Added
+- **AppArmor profile** (`apparmor.txt`) — bumps HA security rating from 7 to 8. Profile covers headless Chromium (`--no-sandbox`), Playwright ffmpeg, system ffmpeg, aiohttp networking, `/data` and `/media/DashSnap` access. Runs in `flags=(complain)` mode: denials are logged but not enforced, making it safe across varied hardware (GPU drivers, kernel versions). Flip to enforcing once denial logs confirm completeness.
+
 ## [0.1.9] - 2026-07-22
 
 ### Fixed

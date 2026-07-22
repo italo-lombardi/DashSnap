@@ -1,0 +1,135 @@
+# DashSnap AppArmor profile — headless Chromium with --no-sandbox + ffmpeg + aiohttp
+#
+# flags=(complain): logs denials but does not enforce — safe baseline for varied
+# hardware (GPU drivers, kernel versions). Collect denials via:
+#   journalctl _TRANSPORT=audit | grep apparmor | grep dashsnap
+# then tighten to enforcing once the allowlist is stable.
+#
+# ponytail: complain mode — flip to flags=(attach_disconnected,mediate_deleted)
+# and drop the flags=(complain) once denial logs confirm completeness
+
+profile dashsnap flags=(complain) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/ssl_certs>
+
+  # Network — aiohttp outbound + Chromium WebRTC/HTTP
+  network tcp,
+  network udp,
+  network inet,
+  network inet6,
+  deny network raw,
+  deny network packet,
+
+  # Capabilities — --no-sandbox headless, no namespace sandbox needed
+  capability chown,
+  capability dac_override,
+  capability dac_read_search,
+  capability fowner,
+  capability fsetid,
+  capability kill,
+  capability setgid,
+  capability setuid,
+  capability net_bind_service,
+  capability ipc_lock,
+
+  # Python + venv
+  /opt/venv/** rmix,
+  /usr/bin/python3* rix,
+  /usr/lib/python3*/** r,
+  /usr/local/lib/python3*/** r,
+
+  # Chromium binary + libs
+  /usr/bin/chromium rix,
+  /usr/lib/chromium/ r,
+  /usr/lib/chromium/** rmix,
+  /etc/chromium.d/** r,
+  /etc/chromium/** r,
+
+  # Playwright ffmpeg (pinned path, HOME-independent)
+  /opt/ms-playwright/ r,
+  /opt/ms-playwright/** rmix,
+
+  # System ffmpeg
+  /usr/bin/ffmpeg rix,
+  /usr/lib/x86_64-linux-gnu/libav* rm,
+  /usr/lib/aarch64-linux-gnu/libav* rm,
+  /usr/lib/** rm,
+
+  # Fonts — required for headless rendering
+  /usr/share/fonts/** r,
+  /etc/fonts/** r,
+  /var/cache/fontconfig/** rwkl,
+
+  # /proc — Chromium reads extensively for process management
+  @{PROC}/ r,
+  @{PROC}/** r,
+  owner @{PROC}/*/oom_score_adj rw,
+  owner @{PROC}/*/clear_refs w,
+  deny @{PROC}/sys/kernel/shmmax w,
+  deny @{PROC}/sys/kernel/** w,
+  deny @{PROC}/sys/net/** w,
+  deny @{PROC}/sysrq-trigger rwklx,
+
+  # /sys — read-only for hardware enumeration
+  /sys/ r,
+  /sys/** r,
+  deny /sys/kernel/security/** rwklx,
+
+  # /dev — Chromium shared memory + GPU
+  /dev/null rw,
+  /dev/zero r,
+  /dev/urandom r,
+  /dev/random r,
+  /dev/tty rw,
+  /dev/dri/ r,
+  /dev/dri/** r,
+  /dev/shm/ rw,
+  /dev/shm/** rwk,
+
+  # Temp dirs — Chromium user-data-dir + Playwright tmp video
+  /tmp/ rw,
+  /tmp/** rwk,
+  /var/tmp/ rw,
+  /var/tmp/** rwk,
+  /run/ r,
+  /run/** rk,
+
+  # App data — config + recordings
+  /data/ r,
+  /data/** rwk,
+  /media/DashSnap/ rw,
+  /media/DashSnap/** rwk,
+
+  # Playwright cache (root home, legacy fallback)
+  owner /root/.cache/ms-playwright/** rmix,
+  owner /root/.config/** rwk,
+  owner /root/.local/** rwk,
+  owner /root/.pki/** rwk,
+
+  # System libs + certs + locale
+  /etc/ld.so.cache r,
+  /etc/ld.so.conf r,
+  /etc/ld.so.conf.d/ r,
+  /etc/ld.so.conf.d/** r,
+  /etc/ssl/** r,
+  /etc/ca-certificates/** r,
+  /etc/localtime r,
+  /etc/timezone r,
+  /usr/share/zoneinfo/** r,
+  /usr/share/ca-certificates/** r,
+  /lib/** rm,
+  /lib64/** rm,
+
+  # Hardening — deny access to other addon/HA data
+  deny /homeassistant/** rwx,
+  deny /config/** rwx,
+  deny /ssl/** rwx,
+  deny /addons/** rwx,
+  deny /backup/** rwx,
+  deny /share/** rwx,
+  deny mount,
+  deny umount,
+  deny pivot_root,
+  deny ptrace,
+}
