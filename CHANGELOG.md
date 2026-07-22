@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [0.1.12] - 2026-07-22
+
+### Fixed
+- **Disable AppArmor** — kernel on target systems lacks the AppArmor ABI (`proc/thread-self/attr/apparmor/exec`) required to load the profile. `apparmor: true` causes update failure with `exit status 1`. Set to `false` until a compatible profile approach is available.
+
 ## [0.1.11] - 2026-07-22
 
 ### Fixed
