@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [0.1.13] - 2026-07-22
+
+### Fixed
+- **Remove `apparmor.txt`** — supervisor loads any existing profile file unconditionally on update, ignoring `apparmor: false`. Deleting the file prevents `install_apparmor()` from running entirely. Fixes persistent `Can't load profile: exit status 1` update failure.
+
 ## [0.1.12] - 2026-07-22
 
 ### Fixed
