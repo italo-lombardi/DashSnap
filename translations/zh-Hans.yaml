@@ -3,7 +3,7 @@ configuration:
     name: HA Base URL
     description: >-
       DashSnap 容器内部可访问的 Home Assistant 实例 URL。
-      示例：http://homeassistant.local:8123、http://192.168.1.10:8123，
+      示例：http://homeassistant.local:8123, http://192.168.1.10:8123，
       或您的 Nabu Casa URL https://xxxx.ui.nabu.casa。
       如果使用 targets_json 进行多目标配置，请留空。
   token:
@@ -19,4 +19,4 @@ configuration:
       如果设置了此项，上面的 base_url 和 token 将被忽略。
       示例：[{"name":"ha","base_url":"http://192.168.1.10:8123","auth":{"strategy":"ha_token","token":"eyJ..."}},
       {"name":"grafana","base_url":"https://grafana.example.com","auth":{"strategy":"http_header","headers":{"Authorization":"Bearer glsa_xxx"}}}]
-      支持的策略：ha_token、http_header、none。
+      支持的策略：ha_token, http_header, none。

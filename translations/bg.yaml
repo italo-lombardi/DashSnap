@@ -9,8 +9,8 @@ configuration:
   token:
     name: Дългосрочен токен за достъп
     description: >-
-      Long-lived access token за Home Assistant.
-      Създайте такъв в HA → Профил (долу вляво) → Long-lived access tokens → Създаване на токен.
+      Дългосрочен токен за достъп до Home Assistant.
+      Създайте такъв в HA → Профил (долу вляво) → Дългосрочни токени за достъп → Създаване на токен.
       Оставете празно, ако използвате targets_json.
   targets_json:
     name: Конфигурация за множество цели (JSON)
