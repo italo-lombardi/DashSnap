@@ -1,0 +1,22 @@
+configuration:
+  base_url:
+    name: Základní URL HA
+    description: >-
+      URL vaší instance Home Assistant, dostupná z kontejneru DashSnap.
+      Příklady: http://homeassistant.local:8123, http://192.168.1.10:8123,
+      nebo vaše Nabu Casa URL https://xxxx.ui.nabu.casa.
+      Ponechte prázdné, pokud používáte targets_json pro nastavení více cílů.
+  token:
+    name: Dlouhodobě platný přístupový token
+    description: >-
+      Dlouhodobě platný přístupový token Home Assistant.
+      Vytvořte jej v HA → Profil (vlevo dole) → Dlouhodobě platné přístupové tokeny → Vytvořit token.
+      Ponechte prázdné, pokud používáte targets_json.
+  targets_json:
+    name: Konfigurace více cílů (JSON)
+    description: >-
+      Volitelné. Definujte více cílů (HA + Grafana + veřejné stránky) jako pole JSON.
+      Pokud je nastaveno, base_url a token výše se ignorují.
+      Příklad: [{"name":"ha","base_url":"http://192.168.1.10:8123","auth":{"strategy":"ha_token","token":"eyJ..."}},
+      {"name":"grafana","base_url":"https://grafana.example.com","auth":{"strategy":"http_header","headers":{"Authorization":"Bearer glsa_xxx"}}}]
+      Podporované strategie: ha_token, http_header, none.

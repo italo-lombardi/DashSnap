@@ -1,0 +1,22 @@
+configuration:
+  base_url:
+    name: URL βάσης του HA
+    description: >-
+      Το URL της εγκατάστασης Home Assistant, όπως είναι προσβάσιμο μέσα από το container του DashSnap.
+      Παραδείγματα: http://homeassistant.local:8123, http://192.168.1.10:8123,
+      ή το URL σας του Nabu Casa https://xxxx.ui.nabu.casa.
+      Αφήστε το κενό αν χρησιμοποιείτε το targets_json για διαμόρφωση πολλαπλών στόχων.
+  token:
+    name: Μακρόβιο διακριτικό πρόσβασης
+    description: >-
+      Ένα μακρόβιο διακριτικό πρόσβασης (long-lived access token) του Home Assistant.
+      Δημιουργήστε ένα στο HA → Προφίλ (κάτω αριστερά) → Μακρόβια διακριτικά πρόσβασης → Δημιουργία διακριτικού.
+      Αφήστε το κενό αν χρησιμοποιείτε το targets_json.
+  targets_json:
+    name: Διαμόρφωση πολλαπλών στόχων (JSON)
+    description: >-
+      Προαιρετικό. Ορίστε πολλαπλούς στόχους (HA + Grafana + δημόσιες σελίδες) ως πίνακα JSON.
+      Αν οριστεί, τα παραπάνω base_url και token αγνοούνται.
+      Παράδειγμα: [{"name":"ha","base_url":"http://192.168.1.10:8123","auth":{"strategy":"ha_token","token":"eyJ..."}},
+      {"name":"grafana","base_url":"https://grafana.example.com","auth":{"strategy":"http_header","headers":{"Authorization":"Bearer glsa_xxx"}}}]
+      Υποστηριζόμενες στρατηγικές: ha_token, http_header, none.

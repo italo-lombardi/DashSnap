@@ -1,0 +1,22 @@
+configuration:
+  base_url:
+    name: HA Base URL
+    description: >-
+      Jūsų Home Assistant egzemplioriaus URL adresas, pasiekiamas iš DashSnap konteinerio vidaus.
+      Pavyzdžiai: http://homeassistant.local:8123, http://192.168.1.10:8123,
+      arba jūsų Nabu Casa URL adresas https://xxxx.ui.nabu.casa.
+      Palikite tuščią, jei naudojate targets_json kelių taikinių konfigūracijai.
+  token:
+    name: Ilgalaikės prieigos raktas
+    description: >-
+      Home Assistant ilgalaikės prieigos raktas.
+      Sukurkite jį HA → Profilis (apačioje kairėje) → Ilgalaikės prieigos raktai → Sukurti raktą.
+      Palikite tuščią, jei naudojate targets_json.
+  targets_json:
+    name: Kelių taikinių konfigūracija (JSON)
+    description: >-
+      Nebūtina. Apibrėžkite kelis taikinius (HA + Grafana + viešieji puslapiai) kaip JSON masyvą.
+      Jei nustatyta, aukščiau esantys base_url ir token yra ignoruojami.
+      Pavyzdys: [{"name":"ha","base_url":"http://192.168.1.10:8123","auth":{"strategy":"ha_token","token":"eyJ..."}},
+      {"name":"grafana","base_url":"https://grafana.example.com","auth":{"strategy":"http_header","headers":{"Authorization":"Bearer glsa_xxx"}}}]
+      Palaikomos strategijos: ha_token, http_header, none.

@@ -1,0 +1,22 @@
+configuration:
+  base_url:
+    name: HA Base URL
+    description: >-
+      DashSnap 컨테이너 내부에서 접근할 수 있는 Home Assistant 인스턴스의 URL입니다.
+      예시: http://homeassistant.local:8123, http://192.168.1.10:8123,
+      또는 Nabu Casa URL https://xxxx.ui.nabu.casa.
+      다중 대상 설정을 위해 targets_json을 사용하는 경우 비워 두세요.
+  token:
+    name: Long-lived Access Token
+    description: >-
+      Home Assistant 장기 액세스 토큰입니다.
+      HA → 프로필(왼쪽 하단) → 장기 액세스 토큰 → 토큰 생성에서 만들 수 있습니다.
+      targets_json을 사용하는 경우 비워 두세요.
+  targets_json:
+    name: Multi-target Config (JSON)
+    description: >-
+      선택 사항입니다. 여러 대상(HA + Grafana + 공개 페이지)을 JSON 배열로 정의합니다.
+      설정하면 위의 base_url과 token은 무시됩니다.
+      예시: [{"name":"ha","base_url":"http://192.168.1.10:8123","auth":{"strategy":"ha_token","token":"eyJ..."}},
+      {"name":"grafana","base_url":"https://grafana.example.com","auth":{"strategy":"http_header","headers":{"Authorization":"Bearer glsa_xxx"}}}]
+      지원되는 전략: ha_token, http_header, none.

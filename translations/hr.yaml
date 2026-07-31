@@ -1,0 +1,22 @@
+configuration:
+  base_url:
+    name: HA Base URL
+    description: >-
+      URL vaše Home Assistant instance, dostupan iz DashSnap kontejnera.
+      Primjeri: http://homeassistant.local:8123, http://192.168.1.10:8123,
+      ili vaš Nabu Casa URL https://xxxx.ui.nabu.casa.
+      Ostavite prazno ako koristite targets_json za postavljanje s više ciljeva.
+  token:
+    name: Long-lived Access Token
+    description: >-
+      Home Assistant token za dugotrajni pristup (long-lived access token).
+      Kreirajte ga u HA → Profil (dolje lijevo) → Long-lived access tokens → Create token.
+      Ostavite prazno ako koristite targets_json.
+  targets_json:
+    name: Konfiguracija s više ciljeva (JSON)
+    description: >-
+      Opcionalno. Definirajte više ciljeva (HA + Grafana + javne stranice) kao JSON polje.
+      Ako je postavljeno, base_url i token iznad se zanemaruju.
+      Primjer: [{"name":"ha","base_url":"http://192.168.1.10:8123","auth":{"strategy":"ha_token","token":"eyJ..."}},
+      {"name":"grafana","base_url":"https://grafana.example.com","auth":{"strategy":"http_header","headers":{"Authorization":"Bearer glsa_xxx"}}}]
+      Podržane strategije: ha_token, http_header, none.

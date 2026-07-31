@@ -1,0 +1,22 @@
+configuration:
+  base_url:
+    name: HA alap-URL
+    description: >-
+      A Home Assistant példány URL-címe, ahogy a DashSnap konténeren belülről elérhető.
+      Példák: http://homeassistant.local:8123, http://192.168.1.10:8123,
+      vagy a Nabu Casa URL-címed https://xxxx.ui.nabu.casa.
+      Hagyd üresen, ha a targets_json beállítást használod több célponthoz.
+  token:
+    name: Hosszú élettartamú hozzáférési token
+    description: >-
+      Egy Home Assistant hosszú élettartamú hozzáférési token.
+      Létrehozás a HA → Profil (bal alsó sarok) → Hosszú élettartamú hozzáférési tokenek → Token létrehozása menüpontban.
+      Hagyd üresen, ha a targets_json beállítást használod.
+  targets_json:
+    name: Több célpontos konfiguráció (JSON)
+    description: >-
+      Opcionális. Több célpont (HA + Grafana + nyilvános oldalak) megadása JSON tömbként.
+      Ha be van állítva, a fenti base_url és token értékeket a rendszer figyelmen kívül hagyja.
+      Példa: [{"name":"ha","base_url":"http://192.168.1.10:8123","auth":{"strategy":"ha_token","token":"eyJ..."}},
+      {"name":"grafana","base_url":"https://grafana.example.com","auth":{"strategy":"http_header","headers":{"Authorization":"Bearer glsa_xxx"}}}]
+      Támogatott stratégiák: ha_token, http_header, none.
