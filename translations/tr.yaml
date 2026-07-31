@@ -3,7 +3,7 @@ configuration:
     name: HA Base URL
     description: >-
       DashSnap konteynerinin içinden erişilebilen Home Assistant örneğinizin URL'si.
-      Örnekler: http://homeassistant.local:8123, http://192.168.1.10:8123
+      Örnekler: http://homeassistant.local:8123, http://192.168.1.10:8123,
       veya Nabu Casa URL'niz https://xxxx.ui.nabu.casa.
       Çoklu hedef kurulumu için targets_json kullanıyorsanız boş bırakın.
   token:

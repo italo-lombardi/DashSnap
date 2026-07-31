@@ -3,7 +3,7 @@ configuration:
     name: HA Base URL
     description: >-
       您的 Home Assistant 執行個體的 URL，需可從 DashSnap 容器內部連線存取。
-      範例：http://homeassistant.local:8123, http://192.168.1.10:8123，
+      範例：http://homeassistant.local:8123, http://192.168.1.10:8123,
       或您的 Nabu Casa URL https://xxxx.ui.nabu.casa。
       若使用 targets_json 進行多目標設定，請留空。
   token:
