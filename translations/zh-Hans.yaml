@@ -7,13 +7,13 @@ configuration:
       或您的 Nabu Casa URL https://xxxx.ui.nabu.casa。
       如果使用 targets_json 进行多目标配置，请留空。
   token:
-    name: Long-lived Access Token
+    name: 长期访问令牌
     description: >-
       Home Assistant 长期访问令牌。
       在 HA → 个人资料（左下角）→ 长期访问令牌 → 创建令牌 中创建一个。
       如果使用 targets_json，请留空。
   targets_json:
-    name: Multi-target Config (JSON)
+    name: 多目标配置 (JSON)
     description: >-
       可选。以 JSON 数组形式定义多个目标（HA + Grafana + 公开页面）。
       如果设置了此项，上面的 base_url 和 token 将被忽略。

@@ -7,13 +7,13 @@ configuration:
       или вашия Nabu Casa URL адрес https://xxxx.ui.nabu.casa.
       Оставете празно, ако използвате targets_json за конфигурация с множество цели.
   token:
-    name: Long-lived Access Token
+    name: Дългосрочен токен за достъп
     description: >-
       Long-lived access token за Home Assistant.
       Създайте такъв в HA → Профил (долу вляво) → Long-lived access tokens → Създаване на токен.
       Оставете празно, ако използвате targets_json.
   targets_json:
-    name: Multi-target Config (JSON)
+    name: Конфигурация за множество цели (JSON)
     description: >-
       По желание. Дефинирайте множество цели (HA + Grafana + публични страници) като JSON масив.
       Ако е зададено, base_url и token по-горе се игнорират.

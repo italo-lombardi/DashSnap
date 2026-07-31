@@ -7,13 +7,13 @@ configuration:
       tai Nabu Casa -osoitteesi https://xxxx.ui.nabu.casa.
       Jätä tyhjäksi, jos käytät targets_json-määritystä usean kohteen asennukseen.
   token:
-    name: Long-lived Access Token
+    name: Pitkäikäinen käyttöoikeustunnus
     description: >-
       Home Assistant -pitkäikäinen käyttöoikeustunnus (long-lived access token).
       Luo sellainen kohdassa HA → Profiili (vasemmalla alhaalla) → Pitkäikäiset käyttöoikeustunnukset → Luo tunnus.
       Jätä tyhjäksi, jos käytät targets_json-määritystä.
   targets_json:
-    name: Multi-target Config (JSON)
+    name: Usean kohteen määritys (JSON)
     description: >-
       Valinnainen. Määritä useita kohteita (HA + Grafana + julkiset sivut) JSON-taulukkona.
       Jos tämä on asetettu, yllä olevat base_url ja token jätetään huomiotta.

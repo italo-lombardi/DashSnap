@@ -7,13 +7,13 @@ configuration:
       또는 Nabu Casa URL https://xxxx.ui.nabu.casa.
       다중 대상 설정을 위해 targets_json을 사용하는 경우 비워 두세요.
   token:
-    name: Long-lived Access Token
+    name: 장기 액세스 토큰
     description: >-
       Home Assistant 장기 액세스 토큰입니다.
       HA → 프로필(왼쪽 하단) → 장기 액세스 토큰 → 토큰 생성에서 만들 수 있습니다.
       targets_json을 사용하는 경우 비워 두세요.
   targets_json:
-    name: Multi-target Config (JSON)
+    name: 다중 대상 설정 (JSON)
     description: >-
       선택 사항입니다. 여러 대상(HA + Grafana + 공개 페이지)을 JSON 배열로 정의합니다.
       설정하면 위의 base_url과 token은 무시됩니다.
