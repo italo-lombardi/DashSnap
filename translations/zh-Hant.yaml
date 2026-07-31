@@ -1,0 +1,22 @@
+configuration:
+  base_url:
+    name: HA Base URL
+    description: >-
+      您的 Home Assistant 執行個體的 URL，需可從 DashSnap 容器內部連線存取。
+      範例：http://homeassistant.local:8123, http://192.168.1.10:8123,
+      或您的 Nabu Casa URL https://xxxx.ui.nabu.casa。
+      若使用 targets_json 進行多目標設定，請留空。
+  token:
+    name: 長期存取權杖
+    description: >-
+      Home Assistant 長期存取權杖。
+      在 HA → 個人資料（左下角）→ 長期存取權杖 → 建立權杖 中建立一組。
+      若使用 targets_json，請留空。
+  targets_json:
+    name: 多目標設定（JSON）
+    description: >-
+      選填。以 JSON 陣列定義多個目標（HA + Grafana + 公開頁面）。
+      若已設定，上方的 base_url 與 token 將被忽略。
+      範例：[{"name":"ha","base_url":"http://192.168.1.10:8123","auth":{"strategy":"ha_token","token":"eyJ..."}},
+      {"name":"grafana","base_url":"https://grafana.example.com","auth":{"strategy":"http_header","headers":{"Authorization":"Bearer glsa_xxx"}}}]
+      支援的策略：ha_token, http_header, none。

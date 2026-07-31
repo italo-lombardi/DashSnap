@@ -1,0 +1,22 @@
+configuration:
+  base_url:
+    name: HA Base URL
+    description: >-
+      Home Assistant -instanssisi URL-osoite, sellaisena kuin se on tavoitettavissa DashSnap-kontista.
+      Esimerkkejä: http://homeassistant.local:8123, http://192.168.1.10:8123,
+      tai Nabu Casa -osoitteesi https://xxxx.ui.nabu.casa.
+      Jätä tyhjäksi, jos käytät targets_json-määritystä usean kohteen asennukseen.
+  token:
+    name: Pitkäikäinen käyttöoikeustunnus
+    description: >-
+      Home Assistant -pitkäikäinen käyttöoikeustunnus (long-lived access token).
+      Luo sellainen kohdassa HA → Profiili (vasemmalla alhaalla) → Pitkäikäiset käyttöoikeustunnukset → Luo tunnus.
+      Jätä tyhjäksi, jos käytät targets_json-määritystä.
+  targets_json:
+    name: Usean kohteen määritys (JSON)
+    description: >-
+      Valinnainen. Määritä useita kohteita (HA + Grafana + julkiset sivut) JSON-taulukkona.
+      Jos tämä on asetettu, yllä olevat base_url ja token jätetään huomiotta.
+      Esimerkki: [{"name":"ha","base_url":"http://192.168.1.10:8123","auth":{"strategy":"ha_token","token":"eyJ..."}},
+      {"name":"grafana","base_url":"https://grafana.example.com","auth":{"strategy":"http_header","headers":{"Authorization":"Bearer glsa_xxx"}}}]
+      Tuetut strategiat: ha_token, http_header, none.

@@ -2,6 +2,11 @@
 
 All notable changes to DashSnap.
 
+## [Unreleased]
+
+### Added
+- **18 new translations** — zh-Hans, zh-Hant, ru, ja, ko, uk, cs, sk, hu, ro, bg, hr, fi, el, tr, lt, lv, ca. Covers all high/medium/low-priority languages listed as missing HA core targets.
+
 ## [0.1.14] - 2026-07-22
 
 ### Fixed

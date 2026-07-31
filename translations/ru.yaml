@@ -1,0 +1,22 @@
+configuration:
+  base_url:
+    name: HA Base URL
+    description: >-
+      URL вашего экземпляра Home Assistant, доступный изнутри контейнера DashSnap.
+      Примеры: http://homeassistant.local:8123, http://192.168.1.10:8123,
+      или ваш URL Nabu Casa https://xxxx.ui.nabu.casa.
+      Оставьте пустым, если используете targets_json для настройки с несколькими целями.
+  token:
+    name: Долгосрочный токен доступа
+    description: >-
+      Долгосрочный токен доступа Home Assistant.
+      Создайте его в HA → Профиль (внизу слева) → Долгоживущие токены доступа → Создать токен.
+      Оставьте пустым, если используете targets_json.
+  targets_json:
+    name: Конфигурация для нескольких целей (JSON)
+    description: >-
+      Необязательно. Определите несколько целей (HA + Grafana + публичные страницы) в виде массива JSON.
+      Если задано, параметры base_url и token выше игнорируются.
+      Пример: [{"name":"ha","base_url":"http://192.168.1.10:8123","auth":{"strategy":"ha_token","token":"eyJ..."}},
+      {"name":"grafana","base_url":"https://grafana.example.com","auth":{"strategy":"http_header","headers":{"Authorization":"Bearer glsa_xxx"}}}]
+      Поддерживаемые стратегии: ha_token, http_header, none.

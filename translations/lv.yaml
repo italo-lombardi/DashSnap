@@ -1,0 +1,22 @@
+configuration:
+  base_url:
+    name: HA bāzes URL
+    description: >-
+      Jūsu Home Assistant instances URL, kas ir pieejams no DashSnap konteinera iekšpuses.
+      Piemēri: http://homeassistant.local:8123, http://192.168.1.10:8123,
+      vai jūsu Nabu Casa URL https://xxxx.ui.nabu.casa.
+      Atstājiet tukšu, ja izmantojat targets_json vairāku mērķu konfigurācijai.
+  token:
+    name: Ilgtermiņa piekļuves pilnvara
+    description: >-
+      Home Assistant ilgtermiņa piekļuves pilnvara.
+      Izveidojiet to sadaļā HA → Profils (apakšējā kreisajā stūrī) → Ilgtermiņa piekļuves pilnvaras → Izveidot pilnvaru.
+      Atstājiet tukšu, ja izmantojat targets_json.
+  targets_json:
+    name: Vairāku mērķu konfigurācija (JSON)
+    description: >-
+      Neobligāti. Definējiet vairākus mērķus (HA + Grafana + publiskās lapas) kā JSON masīvu.
+      Ja iestatīts, iepriekš minētie base_url un token tiek ignorēti.
+      Piemērs: [{"name":"ha","base_url":"http://192.168.1.10:8123","auth":{"strategy":"ha_token","token":"eyJ..."}},
+      {"name":"grafana","base_url":"https://grafana.example.com","auth":{"strategy":"http_header","headers":{"Authorization":"Bearer glsa_xxx"}}}]
+      Atbalstītās stratēģijas: ha_token, http_header, none.
