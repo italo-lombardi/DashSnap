@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements_test.txt
       - name: Run tests with coverage
-        run: pytest tests/ --cov=record --cov-report=term-missing -q
+        run: pytest tests/ --cov=record --cov-branch --cov-report=term-missing -q
 
   docker-build:
     name: Docker Build
