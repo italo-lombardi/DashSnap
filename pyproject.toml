@@ -10,9 +10,10 @@ ignore = ["E501", "SIM105", "SIM117"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "-p no:pytest_homeassistant_custom_component"
+addopts = "-p no:pytest_homeassistant_custom_component --cov=record --cov-branch --cov-report=term-missing"
 
 [tool.coverage.run]
+branch = true
 source = ["record"]
 omit = ["tests/*"]
 
