@@ -114,9 +114,7 @@ class TestParams:
         assert record._params({"lang": "  "})["lang"] is None
 
     def test_lang_invalid_rejected(self):
-        import pytest
         import record
-        from aiohttp import web
 
         for bad in ["d", "de;rm -rf", "de'); alert(1);//", "x" * 40]:
             with pytest.raises(web.HTTPBadRequest):
@@ -1480,3 +1478,33 @@ class TestFfmpegStderrCaptured:
             msg = f"ffmpeg encode failed (exit {proc.returncode}): {stderr_str}"
             assert "codec not found" in msg
             assert "exit 1" in msg
+
+
+class TestCloseQuietly:
+    """_close_quietly swallows+logs close() errors so browser.close() always runs."""
+
+    @pytest.mark.asyncio
+    async def test_close_error_swallowed_and_logged(self, caplog):
+        import record
+
+        async def boom():
+            raise RuntimeError("Target crashed")
+
+        # Must not raise — a raising ctx.close() previously skipped
+        # browser.close() and leaked the whole Chromium process tree.
+        with caplog.at_level("WARNING"):
+            await record._close_quietly("context", boom)
+        assert "context close failed" in caplog.text
+        assert "Target crashed" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_clean_close_runs_closer(self):
+        import record
+
+        calls = []
+
+        async def ok():
+            calls.append(1)
+
+        await record._close_quietly("browser", ok)
+        assert calls == [1]
