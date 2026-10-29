@@ -235,7 +235,35 @@ def _safe_filename_component(value: str) -> str:
     return m.group(0) if m else "page"
 
 
-async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  # pragma: no cover
+# One recording at a time. Each recording spawns a full Chromium process tree;
+# overlapping automation calls (e.g. a 5-minute schedule plus a manual run)
+# would otherwise multiply the process count inside the container.
+_RECORD_LOCK = asyncio.Lock()
+
+
+async def record(  # pragma: no cover
+    url, seconds, vw, vh, fmt="webm", target_name=None, delay=0, lang=None
+):
+    async with _RECORD_LOCK:
+        return await _record(url, seconds, vw, vh, fmt, target_name, delay, lang)
+
+
+async def _close_quietly(what, closer):  # pragma: no cover
+    """Await a Playwright close() call; log instead of raising.
+
+    After a renderer crash ("Target crashed") ctx.close() can itself raise.
+    If that exception propagated, browser.close() would never run and the
+    whole Chromium process tree leaked — each failed recording then left more
+    processes behind until the container hit its PID limit and every launch
+    failed with EAGAIN ("pthread_create: Resource temporarily unavailable").
+    """
+    try:
+        await closer()
+    except Exception as e:  # noqa: BLE001
+        log.warning("%s close failed (ignored): %s", what, e)
+
+
+async def _record(url, seconds, vw, vh, fmt, target_name, delay, lang):  # pragma: no cover
     target = TARGETS.get(target_name or DEFAULT_TARGET)
     if target is None:
         raise ValueError(f"unknown target: {target_name!r}. Configured: {list(TARGETS)}")
@@ -283,10 +311,23 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
         if not is_png:
             ctx_kwargs["record_video_dir"] = str(tmp_dir)
             ctx_kwargs["record_video_size"] = {"width": vw, "height": vh}
-        ctx = await browser.new_context(**ctx_kwargs)
-        page = await ctx.new_page()
+        if lang:
+            # Sets navigator.language and the Accept-Language header.
+            ctx_kwargs["locale"] = lang
+        ctx = None
         raw_video = None  # populated after ctx.close() flushes the .webm
         try:
+            ctx = await browser.new_context(**ctx_kwargs)
+            if lang and is_ha_url:
+                # HA frontend reads its UI language from localStorage
+                # "selectedLanguage" (JSON-encoded string) when the user has
+                # not stored a language in their profile.
+                await ctx.add_init_script(
+                    "try { localStorage.setItem('selectedLanguage', "
+                    + json.dumps(json.dumps(lang))
+                    + "); } catch (e) {}"
+                )
+            page = await ctx.new_page()
             if is_ha_url or strategy not in ("ha_token", "none"):
                 await apply_auth(ctx, page, auth_cfg, base_url)
 
@@ -332,8 +373,9 @@ async def record(url, seconds, vw, vh, fmt="webm", target_name=None, delay=0):  
             # doesn't leave raw_video unbound and mask the real error.
             raw_video = pathlib.Path(await page.video.path())
         finally:
-            await ctx.close()
-            await browser.close()
+            if ctx is not None:
+                await _close_quietly("context", ctx.close)
+            await _close_quietly("browser", browser.close)
 
     try:
         video_size = raw_video.stat().st_size if raw_video is not None else 0
@@ -453,6 +495,19 @@ async def list_dashboards():  # pragma: no cover
 # ---------------------------------------------------------------------------
 
 
+_LANG_RE = re.compile(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*")
+
+
+def _parse_lang(value):
+    """Validate an optional BCP-47-ish language tag such as "de" or "de-DE"."""
+    if value is None or str(value).strip() == "":
+        return None
+    value = str(value).strip()
+    if not _LANG_RE.fullmatch(value) or len(value) > 35:
+        raise ValueError(f"lang must be a language tag like 'de' or 'en-GB', got {value!r}")
+    return value
+
+
 def _params(q):
     try:
         fmt = q.get("format", "webm").lower()
@@ -470,6 +525,7 @@ def _params(q):
             "fmt": fmt,
             "target_name": q.get("target") or None,
             "delay": delay,
+            "lang": _parse_lang(q.get("lang")),
         }
     except (ValueError, TypeError) as e:
         raise web.HTTPBadRequest(reason=f"invalid param: {e}") from e
@@ -497,7 +553,7 @@ async def handle_record(request):
     p = _params(q)
     try:
         out = await record(
-            url, p["seconds"], p["vw"], p["vh"], p["fmt"], p["target_name"], p["delay"]
+            url, p["seconds"], p["vw"], p["vh"], p["fmt"], p["target_name"], p["delay"], p["lang"]
         )
     except Exception as e:
         log.error("record failed for %s: %s", url, e)
@@ -542,7 +598,9 @@ async def handle_record_ha(request):
             status=400,
         )
     try:
-        out = await record(url, p["seconds"], p["vw"], p["vh"], p["fmt"], target_name, p["delay"])
+        out = await record(
+            url, p["seconds"], p["vw"], p["vh"], p["fmt"], target_name, p["delay"], p["lang"]
+        )
     except Exception as e:
         log.error("record/ha failed for %s: %s", url, e)
         return web.json_response({"ok": False, "error": str(e)}, status=500)

@@ -132,6 +132,7 @@ curl "http://localhost:8099/record/ha?path=/lovelace/0&format=png"
 | `format` | No | `webm` | `webm` or `png` |
 | `viewport_width` | No | 1920 | Width in pixels |
 | `viewport_height` | No | 1080 | Height in pixels |
+| `lang` | No | — | UI language, e.g. `de` or `en-GB`. Sets the browser locale; for HA pages also the frontend language (unless the token user has a language stored in their HA profile). |
 
 ### `GET/POST /record` — Record any URL
 

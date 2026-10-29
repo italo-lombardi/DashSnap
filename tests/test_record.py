@@ -96,6 +96,32 @@ class TestParams:
 
         assert record._params({"target": ""})["target_name"] is None
 
+    def test_lang_default_none(self):
+        import record
+
+        assert record._params({})["lang"] is None
+
+    def test_lang_accepts_tags(self):
+        import record
+
+        assert record._params({"lang": "de"})["lang"] == "de"
+        assert record._params({"lang": "en-GB"})["lang"] == "en-GB"
+        assert record._params({"lang": "zh-Hant"})["lang"] == "zh-Hant"
+
+    def test_lang_empty_is_none(self):
+        import record
+
+        assert record._params({"lang": "  "})["lang"] is None
+
+    def test_lang_invalid_rejected(self):
+        import pytest
+        import record
+        from aiohttp import web
+
+        for bad in ["d", "de;rm -rf", "de'); alert(1);//", "x" * 40]:
+            with pytest.raises(web.HTTPBadRequest):
+                record._params({"lang": bad})
+
     def test_delay_default_zero(self):
         import record
 

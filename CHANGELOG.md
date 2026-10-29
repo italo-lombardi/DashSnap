@@ -7,6 +7,18 @@ All notable changes to DashSnap.
 ### Added
 - **18 new translations** — zh-Hans, zh-Hant, ru, ja, ko, uk, cs, sk, hu, ro, bg, hr, fi, el, tr, lt, lv, ca. Covers all high/medium/low-priority languages listed as missing HA core targets.
 
+## [0.1.15] - 2026-10-29
+
+### Fixed
+
+- **Chromium process leak that eventually broke every recording.** If a renderer crashed (`Target crashed`), `ctx.close()` could raise and `browser.close()` was skipped, leaving the Chromium process tree behind. Over days of scheduled screenshots the container hit its PID limit and launches failed with `pthread_create: Resource temporarily unavailable`, `Cannot fork`, and finally `BrowserType.launch: Connection closed while reading from the driver`. Context and browser are now closed independently and close errors are logged instead of raised; the context is also created inside the guarded block.
+- **Zombie processes are reaped.** `init: true` — the add-on previously ran `python3` as PID 1 (`init: false` + `exec`), which never reaps orphaned Chromium helper processes.
+- **Recordings are serialized.** A lock ensures only one Chromium instance runs at a time, so overlapping automation calls no longer multiply the process count.
+
+### Added
+
+- **`lang` parameter** for `/record` and `/record/ha` (e.g. `lang=de`). Sets the browser locale (`navigator.language`, `Accept-Language`) and, for HA pages, the frontend language via `localStorage.selectedLanguage`.
+
 ## [0.1.14] - 2026-07-22
 
 ### Fixed
