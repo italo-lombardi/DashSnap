@@ -35,6 +35,23 @@ jobs:
       - name: Run tests with coverage
         run: pytest tests/ --cov=record --cov-branch --cov-report=term-missing -q
 
+  smoke:
+    name: Smoke (real browser)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements_test.txt
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Run smoke test
+        run: pytest -m smoke --no-cov -q
+
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest

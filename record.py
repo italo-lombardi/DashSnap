@@ -244,11 +244,19 @@ _RECORD_LOCK = asyncio.Lock()
 async def record(  # pragma: no cover
     url, seconds, vw, vh, fmt="webm", target_name=None, delay=0, lang=None
 ):
+    # Timeout the whole serialized recording so one wedged page (e.g. page.goto
+    # stalling before the 10s networkidle cap) can't hold the lock forever and
+    # freeze every later recording until the add-on is restarted. Ceiling =
+    # the clip roll (delay+seconds) plus headroom for the internal page waits
+    # (networkidle 10s + selector 15s) and ffmpeg trim.
     async with _RECORD_LOCK:
-        return await _record(url, seconds, vw, vh, fmt, target_name, delay, lang)
+        return await asyncio.wait_for(
+            _record(url, seconds, vw, vh, fmt, target_name, delay, lang),
+            timeout=delay + seconds + 90,
+        )
 
 
-async def _close_quietly(what, closer):  # pragma: no cover
+async def _close_quietly(what, closer):
     """Await a Playwright close() call; log instead of raising.
 
     After a renderer crash ("Target crashed") ctx.close() can itself raise.

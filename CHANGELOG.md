@@ -7,6 +7,17 @@ All notable changes to DashSnap.
 ### Added
 - **18 new translations** — zh-Hans, zh-Hant, ru, ja, ko, uk, cs, sk, hu, ro, bg, hr, fi, el, tr, lt, lv, ca. Covers all high/medium/low-priority languages listed as missing HA core targets.
 
+## [0.1.16] - 2026-10-29
+
+### Fixed
+
+- **A wedged recording can no longer freeze the service.** `record()` is now wrapped in `asyncio.wait_for` (`delay + seconds + 90s`), so a page that stalls before the internal wait caps can't hold the serialization lock indefinitely and block every later recording until restart.
+
+### Added
+
+- **End-to-end smoke test** — launches real headless Chromium, screenshots a page, and asserts a valid PNG is written. Runs as a separate CI job (`pytest -m smoke`), outside the mocked 100% coverage gate. First machine-verified coverage of the actual browser path.
+- **Unit test for `_close_quietly`** — pins the "close errors are swallowed and logged, never raised" contract that the 0.1.15 leak fix depends on.
+
 ## [0.1.15] - 2026-10-29
 
 ### Fixed
