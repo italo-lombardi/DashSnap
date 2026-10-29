@@ -15,6 +15,7 @@ All notable changes to DashSnap.
 
 ### Added
 
+- **End-to-end smoke test** — launches real headless Chromium, screenshots a page, and asserts a valid PNG is written. Runs as a separate CI job (`pytest -m smoke`), outside the mocked 100% coverage gate. First machine-verified coverage of the actual browser path.
 - **Unit test for `_close_quietly`** — pins the "close errors are swallowed and logged, never raised" contract that the 0.1.15 leak fix depends on.
 
 ## [0.1.15] - 2026-10-29
