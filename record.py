@@ -95,15 +95,15 @@ _RECORDING_RE = re.compile(r"^(\d{8}_\d{6})_([a-zA-Z0-9_]{1,40})\.(webm|png)$")
 def _contained(p: pathlib.Path) -> pathlib.Path:
     """Canonicalize `p` and enforce it stays inside OUT_DIR; raise on escape.
 
-    Module-level so both the recording writer and the list/delete handlers share
-    one traversal guard. (The _record() closure delegates here too.)
+    Uses os.path.realpath + os.path.commonpath — the containment-guard shape
+    CodeQL recognizes as a py/path-injection barrier. Module-level so both the
+    recording writer and the list/delete handlers share one guard.
     """
-    resolved = p.resolve()
-    try:
-        resolved.relative_to(OUT_DIR.resolve())
-    except ValueError as exc:
-        raise RuntimeError(f"path escapes OUT_DIR: {resolved}") from exc
-    return resolved
+    root = os.path.realpath(OUT_DIR)
+    resolved = os.path.realpath(p)
+    if os.path.commonpath([root, resolved]) != root:
+        raise RuntimeError(f"path escapes OUT_DIR: {resolved}")
+    return pathlib.Path(resolved)
 
 
 # System chromium built with H264 (Debian) — needed for live camera streams
