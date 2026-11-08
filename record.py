@@ -755,15 +755,25 @@ async def handle_recordings_delete(request):
 
     # Single explicit name: must be a well-formed recording name that exists.
     if name is not None:
-        if not _RECORDING_RE.match(name):
-            return web.json_response({"ok": False, "error": "invalid_name", "name": name}, status=400)
+        # Taint ends at .group(0): only the substring fully matching the strict
+        # _RECORDING_RE allowlist reaches a path, so no user-controlled character
+        # can. (Same fullmatch-group sanitizer shape CodeQL accepts for
+        # _safe_filename_component / py/path-injection.)
+        m = re.fullmatch(_RECORDING_RE, name)
+        if m is None:
+            return web.json_response(
+                {"ok": False, "error": "invalid_name", "name": name}, status=400
+            )
+        safe_name = m.group(0)
         try:
-            target = _contained(OUT_DIR / name)
+            target = _contained(OUT_DIR / safe_name)
         except RuntimeError:
-            return web.json_response({"ok": False, "error": "invalid_name", "name": name}, status=400)
+            return web.json_response(
+                {"ok": False, "error": "invalid_name", "name": name}, status=400
+            )
         if not target.is_file():
             return web.json_response({"ok": False, "error": "not_found", "name": name}, status=404)
-        candidates = [name]
+        candidates = [safe_name]
     else:
         # all / filtered: reuse the lister (already excludes .tmp_* and foreign).
         candidates = [r["name"] for r in _list_recordings(fmt, slug, older_days)]
@@ -771,8 +781,14 @@ async def handle_recordings_delete(request):
     deleted = []
     if not dry_run:
         for n in candidates:
+            # Re-sanitize each candidate through the same fullmatch-group barrier
+            # before it reaches unlink(); the lister only ever yields _RECORDING_RE
+            # names, so this is a no-op on value but the sanitizer CodeQL tracks.
+            cm = re.fullmatch(_RECORDING_RE, n)
+            if cm is None:  # pragma: no cover - lister/name path guarantee a match
+                continue
             try:
-                _contained(OUT_DIR / n).unlink()
+                _contained(OUT_DIR / cm.group(0)).unlink()
                 deleted.append(n)
             except FileNotFoundError:
                 continue  # raced with another delete; treat as already gone

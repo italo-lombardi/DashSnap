@@ -1694,9 +1694,7 @@ class TestHandleRecordingsDelete:
         monkeypatch.setattr(
             record, "_contained", lambda p: (_ for _ in ()).throw(RuntimeError("escapes"))
         )
-        resp = await record.handle_recordings_delete(
-            self._del({"name": "20260101_120000_a.webm"})
-        )
+        resp = await record.handle_recordings_delete(self._del({"name": "20260101_120000_a.webm"}))
         assert resp.status == 400
         assert record.json.loads(resp.body)["error"] == "invalid_name"
 
@@ -1717,9 +1715,7 @@ class TestHandleRecordingsDelete:
 
         monkeypatch.setattr(record, "OUT_DIR", tmp_path)
         _mk(tmp_path, "20260101_120000_a.webm")
-        resp = await record.handle_recordings_delete(
-            self._del({"name": "20260101_120000_a.webm"})
-        )
+        resp = await record.handle_recordings_delete(self._del({"name": "20260101_120000_a.webm"}))
         assert resp.status == 200
         data = record.json.loads(resp.body)
         assert data["deleted"] == ["20260101_120000_a.webm"] and data["count"] == 1
@@ -1744,9 +1740,7 @@ class TestHandleRecordingsDelete:
 
         monkeypatch.setattr(record, "OUT_DIR", tmp_path)
         _mk(tmp_path, "20260101_120000_a.webm")
-        resp = await record.handle_recordings_delete(
-            self._del({"all": "true", "dry_run": "true"})
-        )
+        resp = await record.handle_recordings_delete(self._del({"all": "true", "dry_run": "true"}))
         assert resp.status == 200
         data = record.json.loads(resp.body)
         assert data["dry_run"] is True and data["count"] == 1

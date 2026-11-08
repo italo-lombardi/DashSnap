@@ -49,8 +49,26 @@ jobs:
         run: pip install -r requirements_test.txt
       - name: Install Chromium
         run: python -m playwright install --with-deps chromium
+      - name: Start DashSnap container
+        # The recordings smoke drives the live HTTP endpoints; the container
+        # image bundles Chromium so its /record works. No options.json needed —
+        # the config loader falls back to the built-in `public` target.
+        run: |
+          echo '{}' > options.json   # compose bind-mounts this file; absent → Docker makes a dir
+          docker compose up -d --build
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8099/health >/dev/null && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8099/health >/dev/null || { docker compose logs; exit 1; }
       - name: Run smoke test
         run: pytest -m smoke --no-cov -q
+      - name: Container logs on failure
+        if: failure()
+        run: docker compose logs
+      - name: Stop container
+        if: always()
+        run: docker compose down
 
   docker-build:
     name: Docker Build

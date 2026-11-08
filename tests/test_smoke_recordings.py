@@ -84,7 +84,9 @@ def test_recordings_live_round_trip(socket_enabled):
 
         # 5. gone
         status, data = _req("GET", "/recordings")
-        assert name not in [r["name"] for r in data["recordings"]], "file still present after delete"
+        assert name not in [r["name"] for r in data["recordings"]], (
+            "file still present after delete"
+        )
     finally:
         # Best-effort cleanup if an assert above left the file behind.
         _req("POST", "/recordings/delete", {"name": name})
