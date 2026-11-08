@@ -54,10 +54,22 @@ def _container_up():
         )
 
 
+@pytest.fixture(autouse=True)
+def _allow_sockets():
+    # When pytest-socket is installed (it ships with the HA test plugin), sockets
+    # are blocked globally; this live smoke needs real ones. When pytest-socket is
+    # absent (CI smoke env), this is a no-op — so the test does not depend on that
+    # package. We only enable (never re-disable in teardown: calling disable_socket
+    # mid-session trips the asyncio-debug loop cleanup in the sibling browser smoke).
+    try:
+        from pytest_socket import enable_socket
+    except ImportError:
+        return
+    enable_socket()
+
+
 @pytest.mark.smoke
-def test_recordings_live_round_trip(socket_enabled):
-    # socket_enabled (pytest-socket fixture): the HA test plugin disables real
-    # sockets globally; this live smoke needs them. Scoped to this test only.
+def test_recordings_live_round_trip():
     _container_up()
 
     # 1. record a uniquely-named clip

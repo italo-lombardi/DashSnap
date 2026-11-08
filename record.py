@@ -257,6 +257,28 @@ def _safe_filename_component(value: str) -> str:
     return m.group(0) if m else "page"
 
 
+def _safe_recording_name(name: str) -> str | None:
+    """Rebuild a recording filename from re.sub-sanitized parts, or None if invalid.
+
+    Returns a filename assembled ONLY from fullmatch-group outputs of a re.sub
+    rebuild (the sanitizer shape CodeQL accepts for py/path-injection) — so the
+    returned string carries no taint from `name`, even though it is byte-identical
+    for every well-formed input. A name that isn't {YYYYMMDD_HHMMSS}_{slug}.{ext}
+    yields None.
+    """
+    m = _RECORDING_RE.fullmatch(name)
+    if m is None:
+        return None
+    stamp, slug, ext = m.group(1), m.group(2), m.group(3)
+    # Each part re-derived through re.sub + fullmatch-group (new string, taint cut).
+    s_stamp = re.fullmatch(r"\d{8}_\d{6}", re.sub(r"[^0-9_]+", "", stamp))
+    s_slug = re.fullmatch(r"[a-zA-Z0-9_]{1,40}", re.sub(r"[^a-zA-Z0-9_]+", "_", slug))
+    s_ext = {"webm": "webm", "png": "png"}.get(ext)
+    if not (s_stamp and s_slug and s_ext):  # pragma: no cover - _RECORDING_RE guarantees parts
+        return None
+    return f"{s_stamp.group(0)}_{s_slug.group(0)}.{s_ext}"
+
+
 # One recording at a time. Each recording spawns a full Chromium process tree;
 # overlapping automation calls (e.g. a 5-minute schedule plus a manual run)
 # would otherwise multiply the process count inside the container.
@@ -755,19 +777,14 @@ async def handle_recordings_delete(request):
 
     # Single explicit name: must be a well-formed recording name that exists.
     if name is not None:
-        # Taint ends at .group(0): only the substring fully matching the strict
-        # _RECORDING_RE allowlist reaches a path, so no user-controlled character
-        # can. (Same fullmatch-group sanitizer shape CodeQL accepts for
-        # _safe_filename_component / py/path-injection.)
-        m = re.fullmatch(_RECORDING_RE, name)
-        if m is None:
+        safe_name = _safe_recording_name(name)
+        if safe_name is None:
             return web.json_response(
                 {"ok": False, "error": "invalid_name", "name": name}, status=400
             )
-        safe_name = m.group(0)
         try:
             target = _contained(OUT_DIR / safe_name)
-        except RuntimeError:
+        except RuntimeError:  # pragma: no cover - rebuilt name cannot escape root
             return web.json_response(
                 {"ok": False, "error": "invalid_name", "name": name}, status=400
             )
@@ -781,14 +798,14 @@ async def handle_recordings_delete(request):
     deleted = []
     if not dry_run:
         for n in candidates:
-            # Re-sanitize each candidate through the same fullmatch-group barrier
-            # before it reaches unlink(); the lister only ever yields _RECORDING_RE
-            # names, so this is a no-op on value but the sanitizer CodeQL tracks.
-            cm = re.fullmatch(_RECORDING_RE, n)
-            if cm is None:  # pragma: no cover - lister/name path guarantee a match
+            # Rebuild each candidate through the taint-cutting sanitizer before it
+            # reaches unlink(); the lister/name path only yields _RECORDING_RE
+            # names, so this is a no-op on value but the barrier CodeQL tracks.
+            safe = _safe_recording_name(n)
+            if safe is None:  # pragma: no cover - candidates are always well-formed
                 continue
             try:
-                _contained(OUT_DIR / cm.group(0)).unlink()
+                _contained(OUT_DIR / safe).unlink()
                 deleted.append(n)
             except FileNotFoundError:
                 continue  # raced with another delete; treat as already gone

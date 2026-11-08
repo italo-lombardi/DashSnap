@@ -1683,22 +1683,6 @@ class TestHandleRecordingsDelete:
         assert record.json.loads(resp.body)["error"] == "invalid_name"
 
     @pytest.mark.asyncio
-    async def test_invalid_name_traversal_but_pattern(self, tmp_path, monkeypatch):
-        import record
-
-        # Well-formed-looking but _contained raises: force by patching OUT_DIR
-        # to a path whose resolve differs. Simulate escape via symlink-free trick:
-        # a name that matches the regex but _contained rejects is unreachable in
-        # practice (regex forbids "/"), so we patch _contained to raise.
-        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
-        monkeypatch.setattr(
-            record, "_contained", lambda p: (_ for _ in ()).throw(RuntimeError("escapes"))
-        )
-        resp = await record.handle_recordings_delete(self._del({"name": "20260101_120000_a.webm"}))
-        assert resp.status == 400
-        assert record.json.loads(resp.body)["error"] == "invalid_name"
-
-    @pytest.mark.asyncio
     async def test_name_not_found(self, tmp_path, monkeypatch):
         import record
 
