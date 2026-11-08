@@ -2,6 +2,13 @@
 
 All notable changes to DashSnap.
 
+## [0.1.17] - 2026-11-08
+
+### Added
+
+- **Recording management endpoints.** `GET /recordings` lists stored recordings (`name`, `size`, `mtime`, `captured`, `format`, `slug`) with optional `format` / `slug` / `older_than_days` filters. `POST /recordings/delete` removes recordings by `name`, `slug`, `older_than_days`, `format`, or `all=true`, with a `dry_run=true` preview. A filterless delete without `all=true` is refused (`400 refuse_wipe`) so nothing is wiped by accident. Only files matching the recording pattern are ever touched — in-flight `.tmp_*` working dirs and any foreign file in the output folder are left alone. Age filtering uses the capture timestamp in the filename, not mtime (mtime is rewritten by media copy/restore). Powers the Home Assistant integration's `list_recordings` / `delete_recordings` services.
+- **Live endpoint smoke test** — `tests/test_smoke_recordings.py` drives the real running container over HTTP (record → list → dry-run → delete → gone, plus the `refuse_wipe` / `not_found` / `invalid_name` error paths). Fails rather than skips if the container is down. Run with `pytest -m smoke --no-cov`.
+
 ## [0.1.16] - 2026-10-29
 
 ### Fixed

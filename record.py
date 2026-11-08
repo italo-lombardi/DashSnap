@@ -84,6 +84,28 @@ log = logging.getLogger("dashsnap")
 
 OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/DashSnap"))
 
+# A recording filename is `{YYYYMMDD_HHMMSS}_{slug}.{webm|png}`. The stamp is a
+# fixed 15-char prefix (datetime "%Y%m%d_%H%M%S") and the slug matches the
+# sanitizer at _safe_filename_component (so it may itself contain "_"). This
+# pattern is the ONLY thing list/delete ever acts on — `.tmp_*` working dirs and
+# any foreign file in OUT_DIR are excluded, so delete can never wipe them.
+_RECORDING_RE = re.compile(r"^(\d{8}_\d{6})_([a-zA-Z0-9_]{1,40})\.(webm|png)$")
+
+
+def _contained(p: pathlib.Path) -> pathlib.Path:
+    """Canonicalize `p` and enforce it stays inside OUT_DIR; raise on escape.
+
+    Module-level so both the recording writer and the list/delete handlers share
+    one traversal guard. (The _record() closure delegates here too.)
+    """
+    resolved = p.resolve()
+    try:
+        resolved.relative_to(OUT_DIR.resolve())
+    except ValueError as exc:
+        raise RuntimeError(f"path escapes OUT_DIR: {resolved}") from exc
+    return resolved
+
+
 # System chromium built with H264 (Debian) — needed for live camera streams
 # (Nest WebRTC requires H264, which Playwright's bundled Chromium lacks).
 # Unset (e.g. local dev / tests) falls back to Playwright's bundled browser.
@@ -286,21 +308,13 @@ async def _record(url, seconds, vw, vh, fmt, target_name, delay, lang):  # pragm
     is_ha_url = strategy == "ha_token" and bool(base_url) and url.startswith(base_url)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    safe_root = OUT_DIR.resolve()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     _path = urlparse(url).path.strip("/") or urlparse(url).netloc
     slug = _safe_filename_component(_path)
     token = uuid.uuid4().hex  # server-generated, never user-controlled — safe for paths
     is_png = fmt == "png"
 
-    def _safe(p: pathlib.Path) -> pathlib.Path:
-        # Path traversal guard: canonicalize and enforce containment in OUT_DIR.
-        resolved = p.resolve()
-        try:
-            resolved.relative_to(safe_root)
-        except ValueError as exc:
-            raise RuntimeError(f"path escapes OUT_DIR: {resolved}") from exc
-        return resolved
+    _safe = _contained  # shared module-level traversal guard
 
     tmp_dir = _safe(OUT_DIR / f".tmp_{stamp}_{token}")
     if not is_png:
@@ -646,6 +660,128 @@ async def handle_ha_dashboards(request):
         log.error("ha/dashboards failed: %s", e)
         return web.json_response({"ok": False, "error": str(e)}, status=502)
     return web.json_response({"ok": True, "dashboards": dashboards})
+
+
+# ---------------------------------------------------------------------------
+# Recordings list / delete
+# ---------------------------------------------------------------------------
+
+
+def _list_recordings(fmt=None, slug=None, older_than_days=None):
+    """Return recording-pattern files in OUT_DIR, newest first, with metadata.
+
+    Only files matching _RECORDING_RE are considered — `.tmp_*` working dirs and
+    any foreign file are ignored. `older_than_days` filters on the filename's
+    capture timestamp (not mtime: mtime is rewritten by /media copy/restore and
+    would make retention delete fresh files or spare stale ones).
+    """
+    if not OUT_DIR.exists():
+        return []
+    now = datetime.now()
+    out = []
+    for p in OUT_DIR.iterdir():
+        m = _RECORDING_RE.match(p.name)
+        if not m:
+            continue
+        stamp, fslug, ffmt = m.group(1), m.group(2), m.group(3)
+        if fmt is not None and ffmt != fmt:
+            continue
+        if slug is not None and fslug != slug:
+            continue
+        captured = datetime.strptime(stamp, "%Y%m%d_%H%M%S")
+        if older_than_days is not None and (now - captured).days < older_than_days:
+            continue
+        st = p.stat()
+        out.append(
+            {
+                "name": p.name,
+                "size": st.st_size,
+                "mtime": int(st.st_mtime),
+                "captured": captured.isoformat(),
+                "format": ffmt,
+                "slug": fslug,
+            }
+        )
+    out.sort(key=lambda r: r["name"], reverse=True)
+    return out
+
+
+async def handle_recordings(request):
+    """GET /recordings — list recordings. Optional ?format=&slug=&older_than_days=."""
+    q = request.query
+    fmt = q.get("format")
+    if fmt is not None and fmt not in ("webm", "png"):
+        return web.json_response({"ok": False, "error": "invalid_format"}, status=400)
+    slug = q.get("slug")
+    older = q.get("older_than_days")
+    try:
+        older_days = int(older) if older is not None else None
+    except (ValueError, TypeError):
+        return web.json_response({"ok": False, "error": "invalid_older_than_days"}, status=400)
+    if older_days is not None and older_days < 0:
+        return web.json_response({"ok": False, "error": "invalid_older_than_days"}, status=400)
+    recs = _list_recordings(fmt, slug, older_days)
+    return web.json_response({"ok": True, "recordings": recs})
+
+
+async def handle_recordings_delete(request):
+    """POST /recordings/delete — delete by name|slug|older_than_days|format|all.
+
+    Refuses a filterless call unless all=true (no accidental wipe). dry_run=true
+    computes the target set without removing anything. Only _RECORDING_RE files
+    are ever removed; a well-formed name that is absent → 404, a malformed/escaping
+    name → 400 invalid_name.
+    """
+    q = request.query
+    name = q.get("name")
+    slug = q.get("slug")
+    fmt = q.get("format")
+    older = q.get("older_than_days")
+    delete_all = q.get("all") == "true"
+    dry_run = q.get("dry_run") == "true"
+
+    if fmt is not None and fmt not in ("webm", "png"):
+        return web.json_response({"ok": False, "error": "invalid_format"}, status=400)
+    try:
+        older_days = int(older) if older is not None else None
+    except (ValueError, TypeError):
+        return web.json_response({"ok": False, "error": "invalid_older_than_days"}, status=400)
+    if older_days is not None and older_days < 0:
+        return web.json_response({"ok": False, "error": "invalid_older_than_days"}, status=400)
+
+    has_filter = name is not None or slug is not None or fmt is not None or older_days is not None
+    if not has_filter and not delete_all:
+        return web.json_response({"ok": False, "error": "refuse_wipe"}, status=400)
+
+    # Single explicit name: must be a well-formed recording name that exists.
+    if name is not None:
+        if not _RECORDING_RE.match(name):
+            return web.json_response({"ok": False, "error": "invalid_name", "name": name}, status=400)
+        try:
+            target = _contained(OUT_DIR / name)
+        except RuntimeError:
+            return web.json_response({"ok": False, "error": "invalid_name", "name": name}, status=400)
+        if not target.is_file():
+            return web.json_response({"ok": False, "error": "not_found", "name": name}, status=404)
+        candidates = [name]
+    else:
+        # all / filtered: reuse the lister (already excludes .tmp_* and foreign).
+        candidates = [r["name"] for r in _list_recordings(fmt, slug, older_days)]
+
+    deleted = []
+    if not dry_run:
+        for n in candidates:
+            try:
+                _contained(OUT_DIR / n).unlink()
+                deleted.append(n)
+            except FileNotFoundError:
+                continue  # raced with another delete; treat as already gone
+    else:
+        deleted = list(candidates)
+
+    return web.json_response(
+        {"ok": True, "deleted": deleted, "count": len(deleted), "dry_run": dry_run}
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1073,6 +1209,8 @@ app.router.add_route("*", "/record/ha", handle_record_ha)
 app.router.add_get("/health", handle_health)
 app.router.add_get("/targets", handle_targets)
 app.router.add_get("/ha/dashboards", handle_ha_dashboards)
+app.router.add_get("/recordings", handle_recordings)
+app.router.add_post("/recordings/delete", handle_recordings_delete)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

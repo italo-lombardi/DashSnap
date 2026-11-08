@@ -1508,3 +1508,263 @@ class TestCloseQuietly:
 
         await record._close_quietly("browser", ok)
         assert calls == [1]
+
+
+# ---------------------------------------------------------------------------
+# Recordings list / delete
+# ---------------------------------------------------------------------------
+
+
+def _mk(out_dir, name):
+    """Create a file in out_dir and return its name."""
+    (out_dir / name).write_bytes(b"x")
+    return name
+
+
+class TestContained:
+    def test_contained_ok(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        p = record._contained(tmp_path / "a.webm")
+        assert p == (tmp_path / "a.webm").resolve()
+
+    def test_contained_escape_raises(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        with pytest.raises(RuntimeError, match="escapes OUT_DIR"):
+            record._contained(tmp_path / ".." / "etc" / "passwd")
+
+
+class TestListRecordings:
+    def test_missing_dir_returns_empty(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path / "nope")
+        assert record._list_recordings() == []
+
+    def test_lists_only_recording_pattern(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        _mk(tmp_path, "20260101_120000_dash.webm")
+        _mk(tmp_path, "20260102_120000_cam.png")
+        _mk(tmp_path, ".tmp_20260101_120000_abc")  # working dir name — excluded
+        _mk(tmp_path, "random.txt")  # foreign — excluded
+        (tmp_path / ".tmp_dir").mkdir()  # non-matching dir
+        recs = record._list_recordings()
+        names = [r["name"] for r in recs]
+        assert names == ["20260102_120000_cam.png", "20260101_120000_dash.webm"]  # newest first
+        r0 = recs[0]
+        assert r0["format"] == "png" and r0["slug"] == "cam"
+        assert r0["captured"] == "2026-01-02T12:00:00"
+        assert r0["size"] == 1 and isinstance(r0["mtime"], int)
+
+    def test_format_filter(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        _mk(tmp_path, "20260101_120000_a.webm")
+        _mk(tmp_path, "20260101_120000_a.png")
+        recs = record._list_recordings(fmt="png")
+        assert [r["name"] for r in recs] == ["20260101_120000_a.png"]
+
+    def test_slug_filter(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        _mk(tmp_path, "20260101_120000_keep.webm")
+        _mk(tmp_path, "20260101_120000_drop.webm")
+        recs = record._list_recordings(slug="keep")
+        assert [r["name"] for r in recs] == ["20260101_120000_keep.webm"]
+
+    def test_older_than_days_filter(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        from datetime import datetime, timedelta
+
+        old = (datetime.now() - timedelta(days=10)).strftime("%Y%m%d_%H%M%S")
+        new = datetime.now().strftime("%Y%m%d_%H%M%S")
+        _mk(tmp_path, f"{old}_old.webm")
+        _mk(tmp_path, f"{new}_new.webm")
+        recs = record._list_recordings(older_than_days=5)
+        assert [r["slug"] for r in recs] == ["old"]  # only the 10-day-old one
+
+
+class TestHandleRecordings:
+    @pytest.mark.asyncio
+    async def test_ok(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        _mk(tmp_path, "20260101_120000_a.webm")
+        resp = await record.handle_recordings(_req("GET", "/recordings"))
+        assert resp.status == 200
+        data = record.json.loads(resp.body)
+        assert data["ok"] and len(data["recordings"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_invalid_format(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        resp = await record.handle_recordings(_req("GET", "/recordings", {"format": "gif"}))
+        assert resp.status == 400
+        assert record.json.loads(resp.body)["error"] == "invalid_format"
+
+    @pytest.mark.asyncio
+    async def test_invalid_older_non_int(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        resp = await record.handle_recordings(_req("GET", "/recordings", {"older_than_days": "x"}))
+        assert resp.status == 400
+        assert record.json.loads(resp.body)["error"] == "invalid_older_than_days"
+
+    @pytest.mark.asyncio
+    async def test_invalid_older_negative(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        resp = await record.handle_recordings(_req("GET", "/recordings", {"older_than_days": "-1"}))
+        assert resp.status == 400
+        assert record.json.loads(resp.body)["error"] == "invalid_older_than_days"
+
+
+class TestHandleRecordingsDelete:
+    def _del(self, params):
+        return _req("POST", "/recordings/delete", params)
+
+    @pytest.mark.asyncio
+    async def test_refuse_wipe(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        resp = await record.handle_recordings_delete(self._del({}))
+        assert resp.status == 400
+        assert record.json.loads(resp.body)["error"] == "refuse_wipe"
+
+    @pytest.mark.asyncio
+    async def test_invalid_format(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        resp = await record.handle_recordings_delete(self._del({"format": "gif"}))
+        assert resp.status == 400
+        assert record.json.loads(resp.body)["error"] == "invalid_format"
+
+    @pytest.mark.asyncio
+    async def test_invalid_older_non_int(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        resp = await record.handle_recordings_delete(self._del({"older_than_days": "x"}))
+        assert resp.status == 400
+        assert record.json.loads(resp.body)["error"] == "invalid_older_than_days"
+
+    @pytest.mark.asyncio
+    async def test_invalid_older_negative(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        resp = await record.handle_recordings_delete(self._del({"older_than_days": "-3"}))
+        assert resp.status == 400
+        assert record.json.loads(resp.body)["error"] == "invalid_older_than_days"
+
+    @pytest.mark.asyncio
+    async def test_invalid_name_malformed(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        resp = await record.handle_recordings_delete(self._del({"name": "../etc/passwd"}))
+        assert resp.status == 400
+        assert record.json.loads(resp.body)["error"] == "invalid_name"
+
+    @pytest.mark.asyncio
+    async def test_invalid_name_traversal_but_pattern(self, tmp_path, monkeypatch):
+        import record
+
+        # Well-formed-looking but _contained raises: force by patching OUT_DIR
+        # to a path whose resolve differs. Simulate escape via symlink-free trick:
+        # a name that matches the regex but _contained rejects is unreachable in
+        # practice (regex forbids "/"), so we patch _contained to raise.
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        monkeypatch.setattr(
+            record, "_contained", lambda p: (_ for _ in ()).throw(RuntimeError("escapes"))
+        )
+        resp = await record.handle_recordings_delete(
+            self._del({"name": "20260101_120000_a.webm"})
+        )
+        assert resp.status == 400
+        assert record.json.loads(resp.body)["error"] == "invalid_name"
+
+    @pytest.mark.asyncio
+    async def test_name_not_found(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        resp = await record.handle_recordings_delete(
+            self._del({"name": "20260101_120000_gone.webm"})
+        )
+        assert resp.status == 404
+        assert record.json.loads(resp.body)["error"] == "not_found"
+
+    @pytest.mark.asyncio
+    async def test_name_delete_ok(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        _mk(tmp_path, "20260101_120000_a.webm")
+        resp = await record.handle_recordings_delete(
+            self._del({"name": "20260101_120000_a.webm"})
+        )
+        assert resp.status == 200
+        data = record.json.loads(resp.body)
+        assert data["deleted"] == ["20260101_120000_a.webm"] and data["count"] == 1
+        assert not (tmp_path / "20260101_120000_a.webm").exists()
+
+    @pytest.mark.asyncio
+    async def test_all_deletes_only_recordings(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        _mk(tmp_path, "20260101_120000_a.webm")
+        _mk(tmp_path, "20260102_120000_b.png")
+        _mk(tmp_path, "keepme.txt")
+        resp = await record.handle_recordings_delete(self._del({"all": "true"}))
+        assert resp.status == 200
+        assert record.json.loads(resp.body)["count"] == 2
+        assert (tmp_path / "keepme.txt").exists()  # foreign untouched
+
+    @pytest.mark.asyncio
+    async def test_dry_run_removes_nothing(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        _mk(tmp_path, "20260101_120000_a.webm")
+        resp = await record.handle_recordings_delete(
+            self._del({"all": "true", "dry_run": "true"})
+        )
+        assert resp.status == 200
+        data = record.json.loads(resp.body)
+        assert data["dry_run"] is True and data["count"] == 1
+        assert (tmp_path / "20260101_120000_a.webm").exists()  # still there
+
+    @pytest.mark.asyncio
+    async def test_delete_race_filenotfound(self, tmp_path, monkeypatch):
+        import record
+
+        monkeypatch.setattr(record, "OUT_DIR", tmp_path)
+        _mk(tmp_path, "20260101_120000_a.webm")
+        # Lister sees the file; unlink races and finds it gone -> skipped, count 0.
+        orig = record._list_recordings
+        monkeypatch.setattr(
+            record, "_list_recordings", lambda *a, **k: [{"name": "20260101_120000_a.webm"}]
+        )
+        (tmp_path / "20260101_120000_a.webm").unlink()  # vanish before handler unlinks
+        resp = await record.handle_recordings_delete(self._del({"all": "true"}))
+        assert resp.status == 200
+        assert record.json.loads(resp.body)["count"] == 0
+        assert orig  # silence unused
