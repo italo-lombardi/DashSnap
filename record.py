@@ -345,6 +345,19 @@ class _Busy(Exception):
     """Raised when the record lock can't be acquired within the deadline → 503."""
 
 
+async def _acquire_or_busy(timeout):
+    """Acquire _RECORD_LOCK within `timeout`, or raise _Busy.
+
+    Split out so the acquire-timeout path has a test that drives the real
+    asyncio.wait_for(Lock.acquire()) → _Busy mechanism (record() itself is
+    pragma: no cover — it launches Chromium).
+    """
+    try:
+        await asyncio.wait_for(_RECORD_LOCK.acquire(), timeout=timeout)
+    except TimeoutError:
+        raise _Busy("recorder busy — another capture is in progress") from None
+
+
 async def record(  # pragma: no cover
     url, seconds, vw, vh, fmt="webm", target_name=None, delay=0, lang=None
 ):
@@ -359,12 +372,10 @@ async def record(  # pragma: no cover
     # (stuck Chromium, zombie ffmpeg) would otherwise park every queued waiter on
     # acquire() with no deadline — the handler never returns, the socket stays
     # LISTEN, and the caller hangs. Time out the acquire and surface a shaped
-    # 503 instead. Waiters wait at most `cap`, not forever (or ~62 min for a
-    # single maximal legit capture holding the lock).
-    try:
-        await asyncio.wait_for(_RECORD_LOCK.acquire(), timeout=cap)
-    except TimeoutError:
-        raise _Busy("recorder busy — another capture is in progress") from None
+    # 503 instead. A waiter blocks at most `cap` on acquire; if it then wins the
+    # lock its own capture runs up to another `cap`, so worst-case end-to-end
+    # latency is ~2*cap — bounded, not forever (the pre-fix failure mode).
+    await _acquire_or_busy(cap)
     try:
         return await asyncio.wait_for(
             _record(url, seconds, vw, vh, fmt, target_name, delay, lang),

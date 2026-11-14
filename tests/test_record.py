@@ -1837,6 +1837,33 @@ class TestBusyAndBlockedMapping:
             assert resp.status == 503
 
 
+class TestAcquireOrBusy:
+    """Drive the real asyncio.wait_for(Lock.acquire()) → _Busy mechanism."""
+
+    async def test_held_lock_times_out_to_busy(self):
+        import asyncio
+
+        import record
+
+        lock = asyncio.Lock()
+        await lock.acquire()  # hold it so the next acquire must wait
+        with patch.object(record, "_RECORD_LOCK", lock):
+            with pytest.raises(record._Busy):
+                await record._acquire_or_busy(0.01)
+        lock.release()
+
+    async def test_free_lock_acquires(self):
+        import asyncio
+
+        import record
+
+        lock = asyncio.Lock()
+        with patch.object(record, "_RECORD_LOCK", lock):
+            await record._acquire_or_busy(1)
+            assert lock.locked()  # acquired, not timed out
+            lock.release()
+
+
 class TestJsonErrorMiddleware:
     async def _run(self, path, handler):
         import record
