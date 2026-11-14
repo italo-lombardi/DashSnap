@@ -1779,6 +1779,14 @@ class TestSsrfGuard:
         with pytest.raises(record._BlockedHost, match="non-public"):
             record._assert_public_host("http://169.254.169.254/latest/meta-data/")
 
+    def test_ipv4_mapped_ipv6_metadata_blocked(self):
+        import record
+
+        # ::ffff:169.254.169.254 — some CPython versions report is_link_local
+        # False on the v6 form; the ipv4_mapped unwrap must still block it.
+        with pytest.raises(record._BlockedHost, match="non-public"):
+            record._assert_public_host("http://[::ffff:169.254.169.254]/")
+
     def test_loopback_blocked(self):
         import record
 

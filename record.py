@@ -66,6 +66,13 @@ def _assert_public_host(url: str) -> None:
         raise _BlockedHost(f"cannot resolve host {host!r}: {e}") from e
     for info in infos:
         ip = ipaddress.ip_address(info[4][0])
+        # Unwrap IPv4-mapped IPv6 (::ffff:a.b.c.d) before classifying — some
+        # CPython versions report is_private/is_link_local as False on the v6
+        # form, which would let ::ffff:169.254.169.254 slip past. Classify the
+        # embedded v4 instead so the guard is version-independent.
+        mapped = getattr(ip, "ipv4_mapped", None)
+        if mapped is not None:
+            ip = mapped
         if (
             ip.is_private
             or ip.is_loopback
