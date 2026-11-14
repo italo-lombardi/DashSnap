@@ -1947,3 +1947,33 @@ class TestH2Fallback:
             record._load_config()  # must not raise
         # last-good "keep" survives the malformed save
         assert "keep" in record.TARGETS
+
+    @pytest.mark.parametrize(
+        "targets_json",
+        [
+            '[{"base_url":"x"}]',  # element dict missing "name" -> KeyError at import
+            "42",  # valid JSON, not a list -> TypeError (not iterable)
+            '"hi"',  # valid JSON string -> TypeError on t["name"]
+            "[1,2]",  # list of non-dicts -> TypeError (not subscriptable)
+            '[{"name":"","base_url":"x"}]',  # empty name -> would shadow nothing usefully
+            '{"name":"x"}',  # dict, not a list of targets
+        ],
+    )
+    def test_bad_shape_targets_json_does_not_raise(self, tmp_path, targets_json):
+        """Valid JSON of the wrong shape must NOT crash _load_config at import.
+
+        These are the all-systems crash-loop paths H-2's syntax-only guard
+        missed: _load_config runs at module top, so a KeyError/TypeError here
+        kills the worker on every add-on with no rollback window. Falls back to
+        the public-only floor instead.
+        """
+        import json
+
+        import record
+
+        cfg = tmp_path / "options.json"
+        cfg.write_text(json.dumps({"targets_json": targets_json}))
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            record._load_config()  # must not raise
+        # public built-in is always present; no malformed target leaked in
+        assert "public" in record.TARGETS

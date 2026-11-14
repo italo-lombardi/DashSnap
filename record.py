@@ -127,7 +127,24 @@ def _load_config():
             ]
 
     CFG = cfg
-    TARGETS = {t["name"]: t for t in CFG.get("targets", [])}
+    # Tolerate any shape of cfg["targets"] — it can come from a user-editable
+    # config UI save, and _load_config runs at module import, so a raise here
+    # crash-loops the add-on on every system (no beta gate, no rollback window).
+    # Syntactically-valid JSON of the wrong shape (a non-list, or an element
+    # that isn't a dict with a "name") would otherwise blow up the dict-comp
+    # below with TypeError/KeyError. Keep only well-formed entries; the `public`
+    # built-in is always re-added via setdefault, so public-only is the floor.
+    raw_targets = CFG.get("targets", [])
+    if not isinstance(raw_targets, list):
+        log.error("config targets is not a list (got %s), ignoring", type(raw_targets).__name__)
+        raw_targets = []
+    targets = []
+    for t in raw_targets:
+        if isinstance(t, dict) and isinstance(t.get("name"), str) and t["name"]:
+            targets.append(t)
+        else:
+            log.error("config target entry is not a dict with a name, skipping: %r", t)
+    TARGETS = {t["name"]: t for t in targets}
     TARGETS.setdefault("public", {"name": "public", "base_url": "", "auth": {"strategy": "none"}})
     DEFAULT_TARGET = next(iter(TARGETS))
 
