@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -22,6 +23,8 @@ if os.environ.get("TZ") and hasattr(time, "tzset"):
 
 _PORT = int(os.environ.get("INGRESS_PORT", 8099))
 
+log = logging.getLogger("dashsnap")
+
 
 def _self_ips() -> list[str]:
     try:
@@ -34,6 +37,44 @@ def _self_ips() -> list[str]:
         )
     except OSError:
         return []
+
+
+class _BlockedHost(Exception):
+    """Raised when a URL resolves to a private/link-local/loopback/metadata IP."""
+
+
+def _assert_public_host(url: str) -> None:
+    """Reject URLs whose host resolves to a non-public IP (SSRF guard).
+
+    Only applied to untrusted ('none'-strategy) captures — the `public` target
+    and raw /record?url= with no auth target. ha_token captures keep hitting the
+    operator-configured base_url unchecked (trusted on purpose). Blocks the
+    cloud metadata endpoint (169.254.169.254), loopback, RFC1918, and other
+    add-ons on the internal bridge. Resolves the host first so a DNS name that
+    points at a private IP can't slip past a string check.
+
+    ponytail: best-effort pre-check, not a TOCTOU-proof guard — a rebinding DNS
+    could still flip after this resolve. Acceptable: `public` is documented as an
+    open-fetch primitive; this stops the obvious metadata/internal cases.
+    """
+    host = urlparse(url).hostname
+    if not host:
+        raise _BlockedHost(f"no host in URL: {url!r}")
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError as e:
+        raise _BlockedHost(f"cannot resolve host {host!r}: {e}") from e
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            raise _BlockedHost(f"host {host!r} resolves to non-public address {ip} — refused")
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +101,13 @@ def _load_config():
             try:
                 cfg["targets"] = json.loads(targets_json)
             except json.JSONDecodeError as e:
-                raise SystemExit(f"targets_json is not valid JSON: {e}") from e
+                # Never SystemExit from a config path that a request can trigger
+                # (handle_config_save → _load_config). A malformed targets_json
+                # would otherwise kill the worker at import and crash-loop under
+                # the supervisor restart policy. Keep the previously loaded
+                # targets if we have them, else start with none, and log loud.
+                log.error("targets_json is not valid JSON, keeping last-good targets: %s", e)
+                cfg["targets"] = list(CFG.get("targets", [])) if "CFG" in globals() else []
         elif "base_url" in cfg:
             if "token" in cfg and "auth" not in cfg:
                 cfg["auth"] = {"strategy": "ha_token", "token": cfg["token"]}
@@ -78,10 +125,21 @@ def _load_config():
     DEFAULT_TARGET = next(iter(TARGETS))
 
 
+def _save_shadow(options: dict) -> None:
+    """Merge `options` into the shadow config file and reload. Raises on IO error."""
+    shadow_path = os.environ.get("SHADOW_CONFIG_PATH", "/data/dashsnap.json")
+    try:
+        with open(shadow_path) as f:
+            existing = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        existing = {}
+    existing.update(options)
+    with open(shadow_path, "w") as f:
+        json.dump(existing, f, indent=2)
+    _load_config()
+
+
 _load_config()  # pragma: no cover
-
-log = logging.getLogger("dashsnap")
-
 OUT_DIR = pathlib.Path(os.environ.get("OUT_DIR", "/media/DashSnap"))
 
 # A recording filename is `{YYYYMMDD_HHMMSS}_{slug}.{webm|png}`. The stamp is a
@@ -142,8 +200,6 @@ def _trim_args(src, final, delay, seconds, fps=_FPS):
         "libvpx",
         "-b:v",
         "1M",
-        "-t",
-        str(seconds),
         str(final),
     ]
 
@@ -285,6 +341,10 @@ def _safe_recording_name(name: str) -> str | None:
 _RECORD_LOCK = asyncio.Lock()
 
 
+class _Busy(Exception):
+    """Raised when the record lock can't be acquired within the deadline → 503."""
+
+
 async def record(  # pragma: no cover
     url, seconds, vw, vh, fmt="webm", target_name=None, delay=0, lang=None
 ):
@@ -293,11 +353,25 @@ async def record(  # pragma: no cover
     # freeze every later recording until the add-on is restarted. Ceiling =
     # the clip roll (delay+seconds) plus headroom for the internal page waits
     # (networkidle 10s + selector 15s) and ffmpeg trim.
-    async with _RECORD_LOCK:
+    cap = delay + seconds + 90
+    # Bound lock ACQUISITION too, not just the holder. wait_for inside the lock
+    # caps the running capture, but a wedged capture that ignores cancellation
+    # (stuck Chromium, zombie ffmpeg) would otherwise park every queued waiter on
+    # acquire() with no deadline — the handler never returns, the socket stays
+    # LISTEN, and the caller hangs. Time out the acquire and surface a shaped
+    # 503 instead. Waiters wait at most `cap`, not forever (or ~62 min for a
+    # single maximal legit capture holding the lock).
+    try:
+        await asyncio.wait_for(_RECORD_LOCK.acquire(), timeout=cap)
+    except TimeoutError:
+        raise _Busy("recorder busy — another capture is in progress") from None
+    try:
         return await asyncio.wait_for(
             _record(url, seconds, vw, vh, fmt, target_name, delay, lang),
-            timeout=delay + seconds + 90,
+            timeout=cap,
         )
+    finally:
+        _RECORD_LOCK.release()
 
 
 async def _close_quietly(what, closer):
@@ -328,6 +402,12 @@ async def _record(url, seconds, vw, vh, fmt, target_name, delay, lang):  # pragm
         raise ValueError(f"unknown auth strategy: {strategy!r}")
 
     is_ha_url = strategy == "ha_token" and bool(base_url) and url.startswith(base_url)
+
+    # SSRF guard: for untrusted ('none') captures, refuse non-public targets
+    # (metadata endpoint, loopback, other add-ons on the internal bridge).
+    # ha_token hits the operator-configured base_url and is trusted on purpose.
+    if strategy == "none":
+        _assert_public_host(url)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -438,7 +518,15 @@ async def _record(url, seconds, vw, vh, fmt, target_name, delay, lang):  # pragm
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr_bytes = await proc.communicate()
+        # Own deadline so a hung ffmpeg doesn't silently eat the whole outer
+        # record() budget before it trips. Generous: trim re-encodes `seconds`
+        # of VP8, so allow the clip length plus 60s headroom.
+        try:
+            _, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=seconds + 60)
+        except TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise RuntimeError("ffmpeg trim timed out") from None
         if proc.returncode != 0 or not final.exists():
             stderr_str = stderr_bytes.decode(errors="replace").strip() if stderr_bytes else ""
             raise RuntimeError(f"ffmpeg encode failed (exit {proc.returncode}): {stderr_str}")
@@ -599,6 +687,10 @@ async def handle_record(request):
         out = await record(
             url, p["seconds"], p["vw"], p["vh"], p["fmt"], p["target_name"], p["delay"], p["lang"]
         )
+    except _Busy as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=503)
+    except _BlockedHost as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=400)
     except Exception as e:
         log.error("record failed for %s: %s", url, e)
         return web.json_response({"ok": False, "error": str(e)}, status=500)
@@ -645,6 +737,8 @@ async def handle_record_ha(request):
         out = await record(
             url, p["seconds"], p["vw"], p["vh"], p["fmt"], target_name, p["delay"], p["lang"]
         )
+    except _Busy as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=503)
     except Exception as e:
         log.error("record/ha failed for %s: %s", url, e)
         return web.json_response({"ok": False, "error": str(e)}, status=500)
@@ -1166,34 +1260,16 @@ async def handle_config_save(request):
     supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
     if not supervisor_token:
         # Dev / local mode — write to shadow config
-        shadow_path = os.environ.get("SHADOW_CONFIG_PATH", "/data/dashsnap.json")
         try:
-            try:
-                with open(shadow_path) as f:
-                    existing = json.load(f)
-            except (FileNotFoundError, json.JSONDecodeError):
-                existing = {}
-            existing.update(options)
-            with open(shadow_path, "w") as f:
-                json.dump(existing, f, indent=2)
-            _load_config()
+            _save_shadow(options)
         except Exception as e:
             log.error("config save (local) failed: %s", e)
             return web.json_response({"ok": False, "error": str(e)}, status=500)
         return web.json_response({"ok": True, "restarting": False})
 
     # Write to shadow config — supervisor never touches this file, so it survives restart wipe
-    shadow_path = os.environ.get("SHADOW_CONFIG_PATH", "/data/dashsnap.json")
     try:
-        try:
-            with open(shadow_path) as f:
-                existing = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            existing = {}
-        existing.update(options)
-        with open(shadow_path, "w") as f:
-            json.dump(existing, f, indent=2)
-        _load_config()
+        _save_shadow(options)
     except Exception as e:
         log.error("config save (direct write) failed: %s", e)
         return web.json_response({"ok": False, "error": str(e)}, status=500)
@@ -1233,6 +1309,32 @@ async def handle_config_save(request):
 # ---------------------------------------------------------------------------
 
 app = web.Application()
+
+
+@web.middleware
+async def _json_errors(request, handler):
+    """Shape errors on API routes as {"ok": false, "error": ...} JSON.
+
+    aiohttp's defaults render HTTP errors (404/405/413/500...) as HTML, which
+    breaks any caller that JSON-parses the body (the integration's H2 guard).
+    `/` and `/favicon.ico` are intentionally NOT part of the JSON contract — `/`
+    is the HTML config UI and favicon is an image — so pass their responses and
+    errors through untouched.
+    """
+    if request.path in ("/", "/favicon.ico"):
+        return await handler(request)
+    try:
+        return await handler(request)
+    except web.HTTPException as e:
+        if e.status < 400:
+            raise  # redirects etc. are not errors
+        return web.json_response({"ok": False, "error": e.reason or "error"}, status=e.status)
+    except Exception as e:  # noqa: BLE001
+        log.error("unhandled error on %s %s: %s", request.method, request.path, e)
+        return web.json_response({"ok": False, "error": "internal error"}, status=500)
+
+
+app.middlewares.append(_json_errors)
 app.router.add_get("/", handle_config_ui)
 app.router.add_get("/favicon.ico", lambda r: web.FileResponse(pathlib.Path("/icon.png")))
 app.router.add_get("/config", handle_config_get)

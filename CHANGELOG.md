@@ -2,6 +2,23 @@
 
 All notable changes to DashSnap.
 
+## [0.1.18] - 2026-11-14
+
+### Fixed
+
+- **A wedged capture can no longer hang every queued recording (root cause of the integration's request timeout).** The per-capture `asyncio.wait_for` bounded only the capture *holding* the serialization lock, not the requests *waiting* for it. A capture that wedged in a way `wait_for` couldn't cancel (stuck Chromium, zombie ffmpeg) left every later `/record` call blocked on `Lock.acquire()` with no deadline — the handler never returned and the socket stayed open, which is exactly the hang the Home Assistant integration had to defend against. Lock *acquisition* is now bounded too; a request that can't take the lock in time returns `503 {"ok": false, "error": "recorder busy ..."}` instead of hanging.
+- **A malformed `targets_json` no longer crash-loops the add-on.** `_load_config()` ran at import and raised `SystemExit` on invalid `targets_json`; a bad save from the config UI then triggered a restart into that same failure, so the worker never bound its port. Load now falls back to the last-good (or empty) target set and logs the error instead of exiting.
+
+### Added
+
+- **SSRF guard for untrusted captures.** `none`-strategy captures (the built-in `public` target and no-auth `/record?url=`) are now refused when the URL resolves to a private, link-local, loopback, reserved, or cloud-metadata address (e.g. `169.254.169.254`), returning `400`. Authenticated (`ha_token`) targets still reach their operator-configured `base_url` unchecked.
+- **Uniform JSON error bodies on API routes.** An aiohttp middleware shapes HTTP errors (404/405/413/500…) as `{"ok": false, "error": ...}` so callers that JSON-parse responses never get an HTML error page. `/` (HTML config UI) and `/favicon.ico` are intentionally excluded.
+- **Docker `HEALTHCHECK`.** Probes `/health` with the bundled `python3` (no new dependency) so the orchestrator can detect and restart a wedged-but-listening container instead of leaving it to hang the integration.
+
+### Security
+
+- **Documented the unauthenticated control plane exposed by `ports: 8099/tcp`** in `SECURITY.md`. The host port mapping makes `POST /config` reachable on the LAN bypassing Home Assistant ingress auth; mitigation (trusted network, or drop the `ports:` mapping) is now written down.
+
 ## [0.1.17] - 2026-11-08
 
 ### Added
