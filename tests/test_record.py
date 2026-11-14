@@ -588,7 +588,12 @@ class TestConfigShim:
             record._load_config()
         assert "ha" in record.TARGETS
 
-    def test_load_config_invalid_targets_json_raises(self, tmp_path):
+    def test_load_config_invalid_targets_json_does_not_raise(self, tmp_path):
+        """Malformed targets_json must NOT SystemExit (would crash-loop the worker).
+
+        Falls back to last-good targets (here: none) and logs, so a bad UI save
+        can't kill the process on the next restart.
+        """
         import json
 
         import record
@@ -596,8 +601,9 @@ class TestConfigShim:
         cfg = tmp_path / "options.json"
         cfg.write_text(json.dumps({"targets_json": "not-json"}))
         with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
-            with pytest.raises(SystemExit):
-                record._load_config()
+            record._load_config()  # must not raise
+        # public built-in is always present; no user targets survived the bad JSON
+        assert "public" in record.TARGETS
 
     def test_load_config_shadow_path_overrides_base(self, tmp_path):
         """SHADOW_CONFIG_PATH env var is read and shadow values win over base config."""
@@ -1746,3 +1752,228 @@ class TestHandleRecordingsDelete:
         assert resp.status == 200
         assert record.json.loads(resp.body)["count"] == 0
         assert orig  # silence unused
+
+
+# ---------------------------------------------------------------------------
+# SSRF guard (M-3) + busy/blocked handler mapping (H-1 / M-3) + error middleware
+# (M-2) + H-2 fallback
+# ---------------------------------------------------------------------------
+
+
+class TestSsrfGuard:
+    def test_public_host_allowed(self):
+        import record
+
+        # Public IP literal passes without resolving DNS.
+        record._assert_public_host("https://93.184.216.34/")
+
+    def test_no_host_blocked(self):
+        import record
+
+        with pytest.raises(record._BlockedHost):
+            record._assert_public_host("file:///etc/passwd")
+
+    def test_metadata_ip_blocked(self):
+        import record
+
+        with pytest.raises(record._BlockedHost, match="non-public"):
+            record._assert_public_host("http://169.254.169.254/latest/meta-data/")
+
+    def test_ipv4_mapped_ipv6_metadata_blocked(self):
+        import record
+
+        # ::ffff:169.254.169.254 — some CPython versions report is_link_local
+        # False on the v6 form; the ipv4_mapped unwrap must still block it.
+        with pytest.raises(record._BlockedHost, match="non-public"):
+            record._assert_public_host("http://[::ffff:169.254.169.254]/")
+
+    def test_loopback_blocked(self):
+        import record
+
+        with pytest.raises(record._BlockedHost, match="non-public"):
+            record._assert_public_host("http://127.0.0.1:8123/")
+
+    def test_private_blocked(self):
+        import record
+
+        with pytest.raises(record._BlockedHost, match="non-public"):
+            record._assert_public_host("http://10.0.0.5/")
+
+    def test_unresolvable_host_blocked(self):
+        import record
+
+        with pytest.raises(record._BlockedHost, match="cannot resolve"):
+            record._assert_public_host("http://no-such-host.invalid/")
+
+
+class TestBusyAndBlockedMapping:
+    async def test_record_busy_returns_503(self):
+        import record
+
+        with (
+            patch.object(record, "TARGETS", {"public": NONE_TARGET}),
+            patch.object(record, "DEFAULT_TARGET", "public"),
+            patch.object(record, "record", AsyncMock(side_effect=record._Busy("busy"))),
+        ):
+            resp = await record.handle_record(_req(params={"url": "https://example.com"}))
+            assert resp.status == 503
+            assert not record.json.loads(resp.body)["ok"]
+
+    async def test_record_blocked_returns_400(self):
+        import record
+
+        with (
+            patch.object(record, "TARGETS", {"public": NONE_TARGET}),
+            patch.object(record, "DEFAULT_TARGET", "public"),
+            patch.object(record, "record", AsyncMock(side_effect=record._BlockedHost("nope"))),
+        ):
+            resp = await record.handle_record(_req(params={"url": "https://example.com"}))
+            assert resp.status == 400
+            assert not record.json.loads(resp.body)["ok"]
+
+    async def test_record_ha_busy_returns_503(self):
+        import record
+
+        with (
+            patch.object(record, "TARGETS", {"home": HA_TARGET}),
+            patch.object(record, "DEFAULT_TARGET", "home"),
+            patch.object(record, "record", AsyncMock(side_effect=record._Busy("busy"))),
+        ):
+            resp = await record.handle_record_ha(
+                _req(path="/record/ha", params={"path": "/lovelace/0", "target": "home"})
+            )
+            assert resp.status == 503
+
+
+class TestAcquireOrBusy:
+    """Drive the real asyncio.wait_for(Lock.acquire()) → _Busy mechanism."""
+
+    async def test_held_lock_times_out_to_busy(self):
+        import asyncio
+
+        import record
+
+        lock = asyncio.Lock()
+        await lock.acquire()  # hold it so the next acquire must wait
+        with patch.object(record, "_RECORD_LOCK", lock):
+            with pytest.raises(record._Busy):
+                await record._acquire_or_busy(0.01)
+        lock.release()
+
+    async def test_free_lock_acquires(self):
+        import asyncio
+
+        import record
+
+        lock = asyncio.Lock()
+        with patch.object(record, "_RECORD_LOCK", lock):
+            await record._acquire_or_busy(1)
+            assert lock.locked()  # acquired, not timed out
+            lock.release()
+
+
+class TestJsonErrorMiddleware:
+    async def _run(self, path, handler):
+        import record
+
+        async def _h(request):
+            return await handler(request)
+
+        return await record._json_errors(_req(path=path), _h)
+
+    async def test_http_exception_to_json(self):
+        import record
+
+        async def boom(request):
+            raise record.web.HTTPNotFound(reason="nope")
+
+        resp = await self._run("/record", boom)
+        assert resp.status == 404
+        assert not record.json.loads(resp.body)["ok"]
+
+    async def test_unhandled_exception_to_json_500(self):
+        import record
+
+        async def boom(request):
+            raise RuntimeError("kaboom")
+
+        resp = await self._run("/record", boom)
+        assert resp.status == 500
+        assert record.json.loads(resp.body)["error"] == "internal error"
+
+    async def test_root_path_passthrough(self):
+        import record
+
+        async def html(request):
+            return record.web.Response(text="<html>", content_type="text/html")
+
+        resp = await self._run("/", html)
+        assert resp.status == 200
+        assert resp.content_type == "text/html"
+
+    async def test_redirect_not_treated_as_error(self):
+        import record
+
+        async def redir(request):
+            raise record.web.HTTPFound("/elsewhere")
+
+        with pytest.raises(record.web.HTTPFound):
+            await self._run("/config", redir)
+
+
+class TestH2Fallback:
+    def test_bad_targets_json_keeps_last_good(self, tmp_path):
+        import json
+
+        import record
+
+        good = tmp_path / "options.json"
+        good.write_text(
+            json.dumps(
+                {
+                    "targets": [
+                        {"name": "keep", "base_url": "http://x", "auth": {"strategy": "none"}}
+                    ]
+                }
+            )
+        )
+        with patch.dict("os.environ", {"CONFIG_PATH": str(good)}):
+            record._load_config()
+        assert "keep" in record.TARGETS
+
+        bad = tmp_path / "options2.json"
+        bad.write_text(json.dumps({"targets_json": "not-json"}))
+        with patch.dict("os.environ", {"CONFIG_PATH": str(bad)}):
+            record._load_config()  # must not raise
+        # last-good "keep" survives the malformed save
+        assert "keep" in record.TARGETS
+
+    @pytest.mark.parametrize(
+        "targets_json",
+        [
+            '[{"base_url":"x"}]',  # element dict missing "name" -> KeyError at import
+            "42",  # valid JSON, not a list -> TypeError (not iterable)
+            '"hi"',  # valid JSON string -> TypeError on t["name"]
+            "[1,2]",  # list of non-dicts -> TypeError (not subscriptable)
+            '[{"name":"","base_url":"x"}]',  # empty name -> would shadow nothing usefully
+            '{"name":"x"}',  # dict, not a list of targets
+        ],
+    )
+    def test_bad_shape_targets_json_does_not_raise(self, tmp_path, targets_json):
+        """Valid JSON of the wrong shape must NOT crash _load_config at import.
+
+        These are the all-systems crash-loop paths H-2's syntax-only guard
+        missed: _load_config runs at module top, so a KeyError/TypeError here
+        kills the worker on every add-on with no rollback window. Falls back to
+        the public-only floor instead.
+        """
+        import json
+
+        import record
+
+        cfg = tmp_path / "options.json"
+        cfg.write_text(json.dumps({"targets_json": targets_json}))
+        with patch.dict("os.environ", {"CONFIG_PATH": str(cfg)}):
+            record._load_config()  # must not raise
+        # public built-in is always present; no malformed target leaked in
+        assert "public" in record.TARGETS

@@ -40,4 +40,11 @@ RUN chmod +x /run.sh
 ARG BUILD_VERSION
 ENV BUILD_VERSION=${BUILD_VERSION}
 
+# Liveness: a wedged-but-listening container (H-1) isn't caught by a port check.
+# Probe /health with the python3 already in the venv (no curl/wget dependency).
+# A 5s overall budget — /health itself bounds its target probes to 10s, so this
+# catches a hard-wedged event loop, not a slow-but-alive one.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD python3 -c "import urllib.request,os,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('INGRESS_PORT','8099'), timeout=4).status==200 else 1)"
+
 CMD ["/run.sh"]
